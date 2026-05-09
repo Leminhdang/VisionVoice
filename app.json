@@ -5,23 +5,55 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0F0F1A"
     },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "VisionVoice cần truy cập camera để chụp ảnh và mô tả khung cảnh.",
+          "microphonePermission": "VisionVoice cần truy cập micro để nhận lệnh giọng nói.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Cho phép VisionVoice nhận lệnh giọng nói để chụp ảnh.",
+          "speechRecognitionPermission": "Cho phép VisionVoice nhận dạng giọng nói.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ],
+      "expo-av"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.visionvoice.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "VisionVoice cần truy cập camera để chụp ảnh và mô tả khung cảnh.",
+        "NSMicrophoneUsageDescription": "VisionVoice cần micro để nhận lệnh giọng nói.",
+        "NSSpeechRecognitionUsageDescription": "VisionVoice dùng nhận dạng giọng nói để nhận lệnh chụp ảnh.",
+        "UIBackgroundModes": ["audio"]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0F0F1A"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.visionvoice.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
