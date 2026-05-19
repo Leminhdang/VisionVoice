@@ -7,7 +7,8 @@ import { API_BASE_URL, API_TIMEOUT_MS, ERROR_MESSAGE } from '../constants/config
 
 export interface AnalyzeImageResponse {
   success?: boolean;
-  description: string;
+  description?: string;
+  caption?: string;
 }
 
 export interface ApiError {
@@ -29,7 +30,7 @@ const apiClient = axios.create({
 
 // Request logger (debug only)
 apiClient.interceptors.request.use((config) => {
-  console.log('[API] →', config.method?.toUpperCase(), config.url);
+  console.log('[API] →', config.method?.toUpperCase(), config.baseURL + (config.url || ''));
   return config;
 });
 
@@ -45,14 +46,29 @@ apiClient.interceptors.response.use(
   },
 );
 
+/**
+ * Cập nhật baseURL của API client lúc chạy app (ví dụ khi đổi URL Colab/Ngrok)
+ */
+export function updateApiBaseUrl(newUrl: string) {
+  let cleanUrl = newUrl.trim();
+  // Tự động thêm http:// nếu thiếu
+  if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = 'http://' + cleanUrl;
+  }
+  apiClient.defaults.baseURL = cleanUrl;
+  console.log('[API] Base URL updated to:', cleanUrl);
+}
+
 // ============================================================
 // API functions
 // ============================================================
 
 /**
  * Gửi ảnh lên backend để phân tích.
- * @param imageUri - file URI cục bộ từ expo-camera
- * @returns description tiếng Việt
+ * Hỗ trợ thử endpoint /caption trước, nếu 404 sẽ fallback sang /api/analyze.
+ * Nhận diện cả key 'caption' hoặc 'description' trả về từ Colab backend.
+ * @param imageUri - file URI cục bộ từ expo-camera hoặc expo-image-picker
+ * @returns description/caption tiếng Việt
  */
 export async function analyzeImage(imageUri: string): Promise<string> {
   try {
@@ -67,22 +83,44 @@ export async function analyzeImage(imageUri: string): Promise<string> {
       type: mimeType,
     } as unknown as Blob);
 
-    const response = await apiClient.post<AnalyzeImageResponse>(
-      '/api/analyze',
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
+    let response;
+    try {
+      console.log('[API] Attempting to call /caption...');
+      response = await apiClient.post<AnalyzeImageResponse>(
+        '/caption',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         },
-      },
-    );
+      );
+    } catch (err) {
+      const axiosErr = err as AxiosError;
+      if (axiosErr.response?.status === 404) {
+        console.log('[API] /caption returned 404, falling back to /api/analyze...');
+        response = await apiClient.post<AnalyzeImageResponse>(
+          '/api/analyze',
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          },
+        );
+      } else {
+        throw err;
+      }
+    }
 
-    const description = response.data?.description?.trim();
+    const data = response.data;
+    const description = (data?.caption || data?.description || '').trim();
+    
     if (!description) {
       throw new Error('Backend trả về mô tả rỗng.');
     }
 
-    console.log('[API] description:', description);
+    console.log('[API] Generated caption:', description);
     return description;
   } catch (err) {
     const axiosErr = err as AxiosError<{ error?: string; details?: string }>;
