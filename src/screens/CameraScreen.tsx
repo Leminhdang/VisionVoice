@@ -161,12 +161,18 @@ export default function CameraScreen() {
         pitch: 1.0,
         rate: 0.9,
         onDone: () => {
-          setCaptureState('idle_with_result');
+          // Tự động quay về màn hình camera live sau khi đọc xong
+          setCaptureState('idle');
+          setSelectedImage(null);
+          setGeneratedCaption('');
           setStatusText('');
           setIsSpeaking(false);
         },
         onError: () => {
-          setCaptureState('idle_with_result');
+          // Quay về màn hình camera live nếu có lỗi đọc
+          setCaptureState('idle');
+          setSelectedImage(null);
+          setGeneratedCaption('');
           setStatusText('');
           setIsSpeaking(false);
         },
@@ -245,12 +251,18 @@ export default function CameraScreen() {
         pitch: 1.0,
         rate: 0.9,
         onDone: () => {
-          setCaptureState('idle_with_result');
+          // Tự động quay về màn hình camera live sau khi đọc xong
+          setCaptureState('idle');
+          setSelectedImage(null);
+          setGeneratedCaption('');
           setStatusText('');
           setIsSpeaking(false);
         },
         onError: () => {
-          setCaptureState('idle_with_result');
+          // Quay về màn hình camera live nếu có lỗi đọc
+          setCaptureState('idle');
+          setSelectedImage(null);
+          setGeneratedCaption('');
           setStatusText('');
           setIsSpeaking(false);
         },
