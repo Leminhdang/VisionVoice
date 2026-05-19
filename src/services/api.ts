@@ -6,6 +6,7 @@ import { API_BASE_URL, API_TIMEOUT_MS, ERROR_MESSAGE } from '../constants/config
 // ============================================================
 
 export interface AnalyzeImageResponse {
+  success?: boolean;
   description: string;
 }
 
@@ -67,7 +68,7 @@ export async function analyzeImage(imageUri: string): Promise<string> {
     } as unknown as Blob);
 
     const response = await apiClient.post<AnalyzeImageResponse>(
-      '/analyze-image',
+      '/api/analyze',
       formData,
       {
         headers: {
@@ -84,9 +85,11 @@ export async function analyzeImage(imageUri: string): Promise<string> {
     console.log('[API] description:', description);
     return description;
   } catch (err) {
-    const axiosErr = err as AxiosError<{ message?: string }>;
-    const serverMsg = axiosErr.response?.data?.message;
-    console.error('[API] analyzeImage failed:', serverMsg ?? axiosErr.message);
+    const axiosErr = err as AxiosError<{ error?: string; details?: string }>;
+    const serverMsg = axiosErr.response?.data?.error;
+    const serverDetails = axiosErr.response?.data?.details;
+    
+    console.error('[API] analyzeImage failed:', serverMsg || axiosErr.message, serverDetails ? `(Chi tiết: ${serverDetails})` : '');
     return ERROR_MESSAGE;
   }
 }

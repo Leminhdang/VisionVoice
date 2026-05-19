@@ -2,8 +2,8 @@
 // App-wide constants
 // ============================================================
 
-/** Thay bằng IP của máy chạy backend (không dùng localhost trên thiết bị thật) */
-export const API_BASE_URL = 'http://192.168.1.100:8000';
+/** Thay bằng IPv4 của máy tính đang chạy backend (port 3000) */
+export const API_BASE_URL = 'http://192.168.2.13:3000';
 
 /** Debounce (ms) giữa các lần chụp liên tiếp */
 export const CAPTURE_DEBOUNCE_MS = 2000;
@@ -27,7 +27,7 @@ export const ERROR_MESSAGE = 'Không thể nhận diện ảnh, vui lòng thử 
  * Bật chế độ giả lập (mock) khi chưa có backend.
  * Đặt thành false khi backend đã sẵn sàng.
  */
-export const MOCK_MODE = true;
+export const MOCK_MODE = false;
 
 /**
  * Câu đọc ngay sau khi chụp, báo hiệu đang xử lý.
