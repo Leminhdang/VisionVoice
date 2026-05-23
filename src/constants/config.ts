@@ -3,7 +3,7 @@
 // ============================================================
 
 /** Thay bằng IPv4 của máy tính đang chạy backend (port 3000) */
-export const API_BASE_URL = 'http://192.168.2.13:3000';
+export const API_BASE_URL = 'https://resemble-grieving-cruelty.ngrok-free.dev';
 
 /** Debounce (ms) giữa các lần chụp liên tiếp */
 export const CAPTURE_DEBOUNCE_MS = 2000;

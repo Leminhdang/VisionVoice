@@ -75,6 +75,8 @@ export default function CameraScreen() {
   // --- Refs ---
   const cameraRef = useRef<CameraView>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const hasRequestedPermissions = useRef(false);
+  const lastResetTimeRef = useRef<number>(0);
 
   // --- State ---
   const [facing] = useState<CameraType>('back');
@@ -86,7 +88,6 @@ export default function CameraScreen() {
    * true khi tất cả permissions đã được cấp và camera sẵn sàng.
    */
   const [permissionsReady, setPermissionsReady] = useState(false);
-  const [waitingForVoicePermission, setWaitingForVoicePermission] = useState(false);
 
   // --- New states for Colab & Gallery demo ---
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -167,6 +168,7 @@ export default function CameraScreen() {
           setGeneratedCaption('');
           setStatusText('');
           setIsSpeaking(false);
+          lastResetTimeRef.current = Date.now();
         },
         onError: () => {
           // Quay về màn hình camera live nếu có lỗi đọc
@@ -175,17 +177,36 @@ export default function CameraScreen() {
           setGeneratedCaption('');
           setStatusText('');
           setIsSpeaking(false);
+          lastResetTimeRef.current = Date.now();
         },
       });
     } catch (err) {
       console.error('[CameraScreen] captureAndAnalyze error:', err);
-      setCaptureState('idle');
-      setSelectedImage(null);
-      setGeneratedCaption('');
-      setStatusText('');
-      setIsSpeaking(false);
+      setIsSpeaking(true);
+      setStatusText('Lỗi kết nối server.');
+      
+      const errMsg = 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại server.';
+      setGeneratedCaption(errMsg);
 
-      Speech.speak('Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại server.', { language: TTS_LOCALE });
+      Speech.speak(errMsg, {
+        language: TTS_LOCALE,
+        onDone: () => {
+          setCaptureState('idle');
+          setSelectedImage(null);
+          setGeneratedCaption('');
+          setStatusText('');
+          setIsSpeaking(false);
+          lastResetTimeRef.current = Date.now();
+        },
+        onError: () => {
+          setCaptureState('idle');
+          setSelectedImage(null);
+          setGeneratedCaption('');
+          setStatusText('');
+          setIsSpeaking(false);
+          lastResetTimeRef.current = Date.now();
+        }
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   }, [captureState]);
@@ -257,6 +278,7 @@ export default function CameraScreen() {
           setGeneratedCaption('');
           setStatusText('');
           setIsSpeaking(false);
+          lastResetTimeRef.current = Date.now();
         },
         onError: () => {
           // Quay về màn hình camera live nếu có lỗi đọc
@@ -265,16 +287,34 @@ export default function CameraScreen() {
           setGeneratedCaption('');
           setStatusText('');
           setIsSpeaking(false);
+          lastResetTimeRef.current = Date.now();
         },
       });
     } catch (err) {
       console.error('[Gallery Analysis] Error:', err);
-      setCaptureState('idle');
-      setSelectedImage(null);
-      setGeneratedCaption('');
-      setStatusText('');
-      setIsSpeaking(false);
-      Speech.speak('Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại kết nối.', { language: TTS_LOCALE });
+      setIsSpeaking(true);
+      const errMsg = 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại kết nối.';
+      setGeneratedCaption(errMsg);
+
+      Speech.speak(errMsg, {
+        language: TTS_LOCALE,
+        onDone: () => {
+          setCaptureState('idle');
+          setSelectedImage(null);
+          setGeneratedCaption('');
+          setStatusText('');
+          setIsSpeaking(false);
+          lastResetTimeRef.current = Date.now();
+        },
+        onError: () => {
+          setCaptureState('idle');
+          setSelectedImage(null);
+          setGeneratedCaption('');
+          setStatusText('');
+          setIsSpeaking(false);
+          lastResetTimeRef.current = Date.now();
+        }
+      });
     }
   };
 
@@ -289,6 +329,7 @@ export default function CameraScreen() {
     setGeneratedCaption('');
     setStatusText('');
     setIsSpeaking(false);
+    lastResetTimeRef.current = Date.now();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Speech.speak('Đã quay lại chế độ máy ảnh.', { language: TTS_LOCALE });
   }, []);
@@ -369,11 +410,19 @@ export default function CameraScreen() {
   useEffect(() => {
     const volumeSubscription = VolumeManager.addVolumeListener((result) => {
       console.log('[Volume] Trigger capture – value:', result.volume);
+      if (Date.now() - lastResetTimeRef.current < 1500) {
+        console.log('[Volume] Cooldown active, ignore volume capture trigger');
+        return;
+      }
       debouncedCapture();
     });
 
     const screenshotSubscription = ScreenCapture.addScreenshotListener(() => {
       console.log('[Screenshot] Trigger capture!');
+      if (Date.now() - lastResetTimeRef.current < 1500) {
+        console.log('[Screenshot] Cooldown active, ignore screenshot capture trigger');
+        return;
+      }
       debouncedCapture();
     });
 
@@ -424,18 +473,13 @@ export default function CameraScreen() {
 
     console.log('[Voice] transcript:', transcript);
 
-    // Xác nhận quyền thông minh
-    if (waitingForVoicePermission) {
-      if (transcript.includes('đồng ý') || transcript.includes('chấp nhận') || transcript.includes('ok')) {
-        console.log('[Permission] Voice agreement detected!');
-        setWaitingForVoicePermission(false);
-        requestCameraPermission();
-      }
-      return;
-    }
 
     // 1. Lệnh chụp ảnh (khi ở máy ảnh)
     if (captureState === 'idle') {
+      if (Date.now() - lastResetTimeRef.current < 1500) {
+        console.log('[Voice] Cooldown active, ignore voice capture trigger');
+        return;
+      }
       const matched = CAPTURE_KEYWORDS.some((kw) => transcript.includes(kw));
       if (matched) {
         console.log('[Voice] Capture keyword matched!');
@@ -477,61 +521,94 @@ export default function CameraScreen() {
   });
 
   // ============================================================
-  // Lifecycle & Initial Permissions
+  // Lifecycle & Initial Permissions (Phương án tối ưu TalkBack/VoiceOver)
   // ============================================================
 
   useEffect(() => {
-    (async () => {
-      // --- 1. Microphone permission ---
-      let micGranted = micPermission?.granted ?? false;
-      if (!micGranted) {
-        await Speech.speak('VisionVoice cần quyền sử dụng micro để nhận lệnh giọng nói. Vui lòng bấm cho phép.', { language: TTS_LOCALE });
-        const result = await requestMicPermission();
-        micGranted = result.granted;
-      }
+    // Chỉ thực hiện khi cả 2 hooks đã trả về kết quả trạng thái hiện tại (không còn null)
+    if (!micPermission || !cameraPermission) {
+      return;
+    }
 
-      if (!micGranted) {
-        await Speech.speak('Không có quyền micro, bạn sẽ không thể điều khiển bằng giọng nói.', { language: TTS_LOCALE });
-      } else {
-        await startVoiceListening();
-      }
+    // Đảm bảo chỉ chạy chuỗi yêu cầu quyền một lần
+    if (hasRequestedPermissions.current) {
+      return;
+    }
+    hasRequestedPermissions.current = true;
 
-      // --- 2. Camera permission ---
-      let camGranted = cameraPermission?.granted ?? false;
-      if (!camGranted) {
-        await Speech.speak('VisionVoice cần quyền truy cập Camera. Vui lòng nói đồng ý để cấp quyền.', { language: TTS_LOCALE });
-        setWaitingForVoicePermission(true);
-        return; 
-      }
+    const requestAllPermissions = async () => {
+      try {
+        let micGranted = micPermission.granted;
+        let camGranted = cameraPermission.granted;
 
-      setPermissionsReady(true);
-      
-      const greetDelay = MOCK_MODE ? 600 : 400;
-      setTimeout(() => {
-        Speech.speak(
-          MOCK_MODE
+        // --- 1. Xử lý quyền Microphone ---
+        if (!micGranted) {
+          // Thông báo cho người dùng biết hệ thống sắp hiện Dialog xin quyền
+          await Speech.speak(
+            'VisionVoice cần quyền sử dụng micro để nhận lệnh giọng nói. Vui lòng nhấn đúp vào nút Cho phép trên màn hình.', 
+            { language: TTS_LOCALE }
+          );
+          
+          // QUAN TRỌNG: Chờ 3 giây để câu nói trên kết thúc hoàn toàn trước khi Dialog xuất hiện
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          
+          // Kích hoạt Dialog hệ thống - Luồng code sẽ "tạm dừng" tại đây cho đến khi người dùng bấm xong
+          const resultMic = await requestMicPermission();
+          micGranted = resultMic.granted;
+        }
+
+        // Kiểm tra kết quả quyền Micro để bật tính năng nghe
+        if (micGranted) {
+          await startVoiceListening();
+        } else {
+          await Speech.speak('Không có quyền micro, bạn sẽ không thể điều khiển bằng giọng nói.', { language: TTS_LOCALE });
+          // Chờ nói xong thông báo lỗi
+          await new Promise((resolve) => setTimeout(resolve, 2500));
+        }
+
+        // --- 2. Xử lý quyền Camera ---
+        if (!camGranted) {
+          // Tiếp tục thông báo dẫn hướng bằng âm thanh
+          await Speech.speak(
+            'VisionVoice cần quyền truy cập Camera để nhận diện hình ảnh. Vui lòng nhấn đúp vào nút Cho phép tiếp theo.', 
+            { language: TTS_LOCALE }
+          );
+          
+          // Chờ 3 giây để câu nói kết thúc
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          
+          // Kích hoạt Dialog hệ thống cho Camera
+          const resultCam = await requestCameraPermission();
+          camGranted = resultCam.granted;
+        }
+
+        // --- 3. Hoàn tất và Chào mừng ---
+        if (camGranted) {
+          setPermissionsReady(true);
+          
+          // Lời chào khi mọi thứ đã sẵn sàng
+          const welcomeMessage = MOCK_MODE
             ? 'Xin chào! VisionVoice đã sẵn sàng ở chế độ thử nghiệm. Hãy bấm chụp, chọn ảnh hoặc ra lệnh bằng giọng nói.'
-            : 'Xin chào! VisionVoice đã sẵn sàng. Hãy bấm chụp, chọn ảnh từ thư viện hoặc dùng giọng nói.',
-          { language: TTS_LOCALE },
-        );
-      }, greetDelay);
-    })();
+            : 'Xin chào! VisionVoice đã sẵn sàng. Hãy bấm chụp, chọn ảnh từ thư viện hoặc dùng giọng nói.';
+            
+          await Speech.speak(welcomeMessage, { language: TTS_LOCALE });
+        } else {
+          await Speech.speak('Không có quyền camera, ứng dụng không thể nhận diện hình ảnh giúp bạn.', { language: TTS_LOCALE });
+        }
+
+      } catch (error) {
+        console.error("Lỗi trong quá trình xin quyền: ", error);
+      }
+    };
+
+    requestAllPermissions();
 
     return () => {
       stopVoiceListening();
       soundRef.current?.unloadAsync();
       Speech.stop();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (cameraPermission?.granted && !permissionsReady) {
-      setPermissionsReady(true);
-      setWaitingForVoicePermission(false);
-      Speech.speak('Đã cấp quyền camera thành công.', { language: TTS_LOCALE });
-    }
-  }, [cameraPermission, permissionsReady]);
+  }, [micPermission, cameraPermission, startVoiceListening, stopVoiceListening]);
 
   // ============================================================
   // UI Render
