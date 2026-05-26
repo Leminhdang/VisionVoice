@@ -77,7 +77,7 @@ export async function analyzeImage(imageUri: string): Promise<string> {
 
     const formData = new FormData();
     // React Native FormData chấp nhận object dạng { uri, name, type }
-    formData.append('file', {
+    formData.append('image', {
       uri: imageUri,
       name: filename,
       type: mimeType,
