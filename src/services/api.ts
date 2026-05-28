@@ -6,15 +6,11 @@ import { API_BASE_URL, API_TIMEOUT_MS, ERROR_MESSAGE } from '../constants/config
 // ============================================================
 
 export interface AnalyzeImageResponse {
-  success?: boolean;
   description?: string;
   caption?: string;
 }
 
-export interface ApiError {
-  message: string;
-  statusCode?: number;
-}
+
 
 // ============================================================
 // Axios instance
@@ -64,54 +60,31 @@ export function updateApiBaseUrl(newUrl: string) {
 // ============================================================
 
 /**
- * Gửi ảnh lên backend để phân tích.
- * Hỗ trợ thử endpoint /caption trước, nếu 404 sẽ fallback sang /api/analyze.
- * Nhận diện cả key 'caption' hoặc 'description' trả về từ Colab backend.
+ * Gửi ảnh lên backend để gen caption.
+ * POST /caption với formData chứa field "image".
  * @param imageUri - file URI cục bộ từ expo-camera hoặc expo-image-picker
- * @returns description/caption tiếng Việt
+ * @returns caption tiếng Việt
  */
 export async function analyzeImage(imageUri: string): Promise<string> {
   try {
-    const filename = imageUri.split('/').pop() ?? 'photo.jpg';
-    const mimeType = filename.endsWith('.png') ? 'image/png' : 'image/jpeg';
-
     const formData = new FormData();
     // React Native FormData chấp nhận object dạng { uri, name, type }
     formData.append('image', {
       uri: imageUri,
-      name: filename,
-      type: mimeType,
+      name: 'photo.jpg',
+      type: 'image/jpeg',
     } as unknown as Blob);
 
-    let response;
-    try {
-      console.log('[API] Attempting to call /caption...');
-      response = await apiClient.post<AnalyzeImageResponse>(
-        '/caption',
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
+    console.log('[API] POST /caption...');
+    const response = await apiClient.post<AnalyzeImageResponse>(
+      '/caption',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
         },
-      );
-    } catch (err) {
-      const axiosErr = err as AxiosError;
-      if (axiosErr.response?.status === 404) {
-        console.log('[API] /caption returned 404, falling back to /api/analyze...');
-        response = await apiClient.post<AnalyzeImageResponse>(
-          '/api/analyze',
-          formData,
-          {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
-          },
-        );
-      } else {
-        throw err;
-      }
-    }
+      },
+    );
 
     const data = response.data;
     const description = (data?.caption || data?.description || '').trim();

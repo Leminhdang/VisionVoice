@@ -821,6 +821,7 @@ export default function CameraScreen() {
         </View>
       )}
 
+
       {/* 5. Cửa sổ cài đặt kết nối API Colab */}
       <Modal
         visible={isSettingsOpen}
