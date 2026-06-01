@@ -1,10 +1,6 @@
 import { useRef, useCallback } from 'react';
 import { CAPTURE_DEBOUNCE_MS } from '../constants/config';
 
-/**
- * Hook đơn giản để debounce một callback.
- * Trả về hàm debounced – gọi liên tiếp nhanh hơn CAPTURE_DEBOUNCE_MS sẽ bị bỏ qua.
- */
 export function useDebounceCallback<T extends (...args: unknown[]) => void>(
   fn: T,
   delay: number = CAPTURE_DEBOUNCE_MS,
@@ -21,7 +17,6 @@ export function useDebounceCallback<T extends (...args: unknown[]) => void>(
       lastCalledRef.current = now;
       fn(...args);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [fn, delay],
   ) as T;
 

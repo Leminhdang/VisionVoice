@@ -1,10 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { API_BASE_URL, API_TIMEOUT_MS, ERROR_MESSAGE } from '../constants/config';
 
-// ============================================================
-// Types
-// ============================================================
-
 export interface AnalyzeImageResponse {
   description?: string;
   caption?: string;
@@ -12,9 +8,6 @@ export interface AnalyzeImageResponse {
 
 
 
-// ============================================================
-// Axios instance
-// ============================================================
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -24,13 +17,11 @@ const apiClient = axios.create({
   },
 });
 
-// Request logger (debug only)
 apiClient.interceptors.request.use((config) => {
   console.log('[API] →', config.method?.toUpperCase(), config.baseURL + (config.url || ''));
   return config;
 });
 
-// Response logger (debug only)
 apiClient.interceptors.response.use(
   (response) => {
     console.log('[API] ← status:', response.status);
@@ -42,12 +33,8 @@ apiClient.interceptors.response.use(
   },
 );
 
-/**
- * Cập nhật baseURL của API client lúc chạy app (ví dụ khi đổi URL Colab/Ngrok)
- */
 export function updateApiBaseUrl(newUrl: string) {
   let cleanUrl = newUrl.trim();
-  // Tự động thêm http:// nếu thiếu
   if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
     cleanUrl = 'http://' + cleanUrl;
   }
@@ -55,20 +42,9 @@ export function updateApiBaseUrl(newUrl: string) {
   console.log('[API] Base URL updated to:', cleanUrl);
 }
 
-// ============================================================
-// API functions
-// ============================================================
-
-/**
- * Gửi ảnh lên backend để gen caption.
- * POST /caption với formData chứa field "image".
- * @param imageUri - file URI cục bộ từ expo-camera hoặc expo-image-picker
- * @returns caption tiếng Việt
- */
 export async function analyzeImage(imageUri: string): Promise<string> {
   try {
     const formData = new FormData();
-    // React Native FormData chấp nhận object dạng { uri, name, type }
     formData.append('image', {
       uri: imageUri,
       name: 'photo.jpg',
