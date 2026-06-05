@@ -51,7 +51,6 @@ export async function analyzeImage(imageUri: string): Promise<string> {
       type: 'image/jpeg',
     } as unknown as Blob);
 
-    console.log('[API] POST /caption...');
     const response = await apiClient.post<AnalyzeImageResponse>(
       '/caption',
       formData,

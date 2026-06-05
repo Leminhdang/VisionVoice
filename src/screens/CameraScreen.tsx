@@ -29,6 +29,7 @@ import { Audio } from 'expo-av';
 import { VolumeManager } from 'react-native-volume-manager';
 import * as ScreenCapture from 'expo-screen-capture';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   ExpoSpeechRecognitionModule,
@@ -99,10 +100,6 @@ export default function CameraScreen() {
   const [apiUrlInput, setApiUrlInput] = useState<string>(API_BASE_URL);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // ============================================================
-  // Core: Chụp ảnh → gửi API → đọc kết quả
-  // ============================================================
-
   const captureAndAnalyze = useCallback(async () => {
     if (captureState !== 'idle' && captureState !== 'idle_with_result') {
       console.log('[Capture] Blocked – state:', captureState);
@@ -111,32 +108,28 @@ export default function CameraScreen() {
     if (!cameraRef.current) return;
 
     try {
-      // 1. Rung để phản hồi xúc giác
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-
-      // 2. Phát âm thanh chụp (shutter)
       playCameraSound();
-
-      // 3. Chuẩn bị chụp ảnh
       setCaptureState('capturing');
       setStatusText('Đang chụp ảnh...');
       setSelectedImage(null);
       setGeneratedCaption('');
 
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
+        quality: 0.5,
       });
 
       if (!photo?.uri) throw new Error('Không lấy được URI ảnh.');
-      console.log('[Capture] photo URI:', photo.uri);
 
-      // Lưu ảnh chụp để làm preview trên màn hình kết quả
-      setSelectedImage(photo.uri);
+      // Nén và resize ảnh về 1024px để giảm dung lượng tải lên API
+      const manipulated = await ImageManipulator.manipulateAsync(
+        photo.uri,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG }
+      );
 
-      // 4. Đọc thông báo ngay lập tức (phản hồi cho người khiếm thị)
+      setSelectedImage(manipulated.uri);
       Speech.speak(CAPTURE_FEEDBACK_PHRASE, { language: TTS_LOCALE });
-
-      // 5. Gửi lên backend (hoặc mock)
       setCaptureState('analyzing');
       setStatusText('GRIT đang phân tích...');
 
@@ -147,7 +140,7 @@ export default function CameraScreen() {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         description = MOCK_DESCRIPTION;
       } else {
-        description = await analyzeImage(photo.uri);
+        description = await analyzeImage(manipulated.uri);
       }
 
       setGeneratedCaption(description);
@@ -246,20 +239,28 @@ export default function CameraScreen() {
 
   const analyzeSelectedImage = async (uri: string) => {
     try {
-      setSelectedImage(uri);
-      setGeneratedCaption('');
       setCaptureState('analyzing');
       setStatusText('GRIT đang phân tích...');
+      setGeneratedCaption('');
 
       // Đọc thông báo đang xử lý
       Speech.speak(CAPTURE_FEEDBACK_PHRASE, { language: TTS_LOCALE });
+
+      // Nén và resize ảnh chọn từ thư viện trước khi gửi API
+      const manipulated = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      setSelectedImage(manipulated.uri);
 
       let description: string;
       if (MOCK_MODE) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         description = MOCK_DESCRIPTION;
       } else {
-        description = await analyzeImage(uri);
+        description = await analyzeImage(manipulated.uri);
       }
 
       setGeneratedCaption(description);
