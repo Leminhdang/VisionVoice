@@ -48,14 +48,10 @@ import {
   API_BASE_URL,
 } from '../constants/config';
 
-// ============================================================
-// Types
-// ============================================================
 type CaptureState = 'idle' | 'capturing' | 'analyzing' | 'speaking' | 'idle_with_result';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Voice command definitions for easy demo usage
 const RESET_KEYWORDS = [
   'quay lại', 'chụp tiếp', 'chụp lại', 'tiếp tục', 'quay lai', 'chup tiep', 'chup lai', 'tiep tuc', 'thử lại', 'thu lai',
   'mới', 'ảnh mới', 'anh moi', 'moi'
@@ -64,51 +60,62 @@ const SPEAK_KEYWORDS = [
   'đọc lại', 'nghe lại', 'đọc mô tả', 'đọc', 'doc lai', 'nghe lai', 'doc mo ta', 'doc', 'đọc lại kết quả', 'nghe lại kết quả'
 ];
 
-// ============================================================
-// CameraScreen
-// ============================================================
 
 export default function CameraScreen() {
-  // --- Permissions ---
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
-
-  // --- Refs ---
   const cameraRef = useRef<CameraView>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const hasRequestedPermissions = useRef(false);
   const lastResetTimeRef = useRef<number>(0);
-
-  // --- State ---
   const [facing] = useState<CameraType>('back');
   const [captureState, setCaptureState] = useState<CaptureState>('idle');
   const [statusText, setStatusText] = useState('');
   const [isListening, setIsListening] = useState(false);
-  
-  /**
-   * true khi tất cả permissions đã được cấp và camera sẵn sàng.
-   */
   const [permissionsReady, setPermissionsReady] = useState(false);
-
-  // --- New states for Colab & Gallery demo ---
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [generatedCaption, setGeneratedCaption] = useState<string>('');
   const [isSpeaking, setIsSpeaking] = useState(false);
-
-  // Connection settings states
   const [apiUrl, setApiUrl] = useState<string>(API_BASE_URL);
   const [apiUrlInput, setApiUrlInput] = useState<string>(API_BASE_URL);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [selectedPictureSize, setSelectedPictureSize] = useState<string | undefined>(undefined);
+
+  const onCameraReady = useCallback(async () => {
+    if (!cameraRef.current) return;
+    try {
+      const sizes = await cameraRef.current.getAvailablePictureSizesAsync();
+      let bestSize = sizes[0];
+      let minDiff = Infinity;
+      for (const size of sizes) {
+        const parts = size.split('x');
+        if (parts.length === 2) {
+          const w = parseInt(parts[0], 10);
+          const h = parseInt(parts[1], 10);
+          const maxDim = Math.max(w, h);
+          const diff = Math.abs(maxDim - 1280);
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestSize = size;
+          }
+        }
+      }
+      if (bestSize) {
+        setSelectedPictureSize(bestSize);
+      }
+    } catch (err) {
+    }
+  }, []);
+
 
   const captureAndAnalyze = useCallback(async () => {
     if (captureState !== 'idle' && captureState !== 'idle_with_result') {
-      console.log('[Capture] Blocked – state:', captureState);
       return;
     }
     if (!cameraRef.current) return;
 
     try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch((e) => console.warn(e));
       playCameraSound();
       setCaptureState('capturing');
       setStatusText('Đang chụp ảnh...');
@@ -116,27 +123,24 @@ export default function CameraScreen() {
       setGeneratedCaption('');
 
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.5,
+        quality: 0.4,
       });
 
       if (!photo?.uri) throw new Error('Không lấy được URI ảnh.');
 
-      // Nén và resize ảnh về 1024px để giảm dung lượng tải lên API
-      const manipulated = await ImageManipulator.manipulateAsync(
-        photo.uri,
-        [{ resize: { width: 1024 } }],
-        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG }
-      );
-
-      setSelectedImage(manipulated.uri);
-      Speech.speak(CAPTURE_FEEDBACK_PHRASE, { language: TTS_LOCALE });
+      setSelectedImage(photo.uri);
       setCaptureState('analyzing');
       setStatusText('GRIT đang phân tích...');
+      Speech.speak(CAPTURE_FEEDBACK_PHRASE, { language: TTS_LOCALE });
+
+      const manipulated = await ImageManipulator.manipulateAsync(
+        photo.uri,
+        [{ resize: { width: 800 } }],
+        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
+      );
 
       let description: string;
       if (MOCK_MODE) {
-        // Giả lập delay mạng 2 giây để demo mượt mà
-        console.log('[Mock] MOCK_MODE=true – skipping real API call.');
         await new Promise((resolve) => setTimeout(resolve, 2000));
         description = MOCK_DESCRIPTION;
       } else {
@@ -145,7 +149,6 @@ export default function CameraScreen() {
 
       setGeneratedCaption(description);
 
-      // 6. Đọc kết quả qua TTS
       setCaptureState('speaking');
       setStatusText('Đang đọc kết quả...');
       setIsSpeaking(true);
@@ -155,7 +158,6 @@ export default function CameraScreen() {
         pitch: 1.0,
         rate: 0.9,
         onDone: () => {
-          // Tự động quay về màn hình camera live sau khi đọc xong
           setCaptureState('idle');
           setSelectedImage(null);
           setGeneratedCaption('');
@@ -164,7 +166,6 @@ export default function CameraScreen() {
           lastResetTimeRef.current = Date.now();
         },
         onError: () => {
-          // Quay về màn hình camera live nếu có lỗi đọc
           setCaptureState('idle');
           setSelectedImage(null);
           setGeneratedCaption('');
@@ -174,10 +175,8 @@ export default function CameraScreen() {
         },
       });
     } catch (err) {
-      console.error('[CameraScreen] captureAndAnalyze error:', err);
       setIsSpeaking(true);
       setStatusText('Lỗi kết nối server.');
-      
       const errMsg = 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại server.';
       setGeneratedCaption(errMsg);
 
@@ -204,22 +203,14 @@ export default function CameraScreen() {
     }
   }, [captureState]);
 
-  // Debounce để tránh trigger nhiều lần liên tiếp (nút âm lượng / voice)
   const debouncedCapture = useDebounceCallback(captureAndAnalyze as (...args: unknown[]) => void);
-
-  // ============================================================
-  // Gallery selection (Chọn ảnh từ thư viện)
-  // ============================================================
 
   const pickImage = async () => {
     if (captureState !== 'idle' && captureState !== 'idle_with_result') return;
-
     try {
-      // Dừng TTS hiện tại nếu có
       await Speech.stop();
       setIsSpeaking(false);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -228,11 +219,9 @@ export default function CameraScreen() {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const pickedUri = result.assets[0].uri;
-        console.log('[Gallery] Selected image URI:', pickedUri);
         await analyzeSelectedImage(pickedUri);
       }
     } catch (e) {
-      console.error('[Gallery] Error picking image:', e);
       Speech.speak('Không thể mở thư viện ảnh.', { language: TTS_LOCALE });
     }
   };
@@ -242,18 +231,15 @@ export default function CameraScreen() {
       setCaptureState('analyzing');
       setStatusText('GRIT đang phân tích...');
       setGeneratedCaption('');
-
-      // Đọc thông báo đang xử lý
       Speech.speak(CAPTURE_FEEDBACK_PHRASE, { language: TTS_LOCALE });
 
-      // Nén và resize ảnh chọn từ thư viện trước khi gửi API
+      setSelectedImage(uri);
+
       const manipulated = await ImageManipulator.manipulateAsync(
         uri,
-        [{ resize: { width: 1024 } }],
-        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG }
+        [{ resize: { width: 800 } }],
+        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
       );
-
-      setSelectedImage(manipulated.uri);
 
       let description: string;
       if (MOCK_MODE) {
@@ -273,7 +259,6 @@ export default function CameraScreen() {
         pitch: 1.0,
         rate: 0.9,
         onDone: () => {
-          // Tự động quay về màn hình camera live sau khi đọc xong
           setCaptureState('idle');
           setSelectedImage(null);
           setGeneratedCaption('');
@@ -282,7 +267,6 @@ export default function CameraScreen() {
           lastResetTimeRef.current = Date.now();
         },
         onError: () => {
-          // Quay về màn hình camera live nếu có lỗi đọc
           setCaptureState('idle');
           setSelectedImage(null);
           setGeneratedCaption('');
@@ -292,7 +276,6 @@ export default function CameraScreen() {
         },
       });
     } catch (err) {
-      console.error('[Gallery Analysis] Error:', err);
       setIsSpeaking(true);
       const errMsg = 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại kết nối.';
       setGeneratedCaption(errMsg);
@@ -319,10 +302,6 @@ export default function CameraScreen() {
     }
   };
 
-  // ============================================================
-  // Reset back to Live Camera
-  // ============================================================
-
   const resetToCamera = useCallback(() => {
     Speech.stop();
     setCaptureState('idle');
@@ -334,10 +313,6 @@ export default function CameraScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Speech.speak('Đã quay lại chế độ máy ảnh.', { language: TTS_LOCALE });
   }, []);
-
-  // ============================================================
-  // Play/Pause Speech description manually
-  // ============================================================
 
   const speakCaption = async () => {
     if (!generatedCaption) return;
@@ -360,14 +335,9 @@ export default function CameraScreen() {
         onError: () => setIsSpeaking(false),
       });
     } catch (e) {
-      console.error('[TTS] Speak error:', e);
       setIsSpeaking(false);
     }
   };
-
-  // ============================================================
-  // Server Configurations (Dành cho việc đổi URL Colab Ngrok)
-  // ============================================================
 
   const saveApiUrl = () => {
     const cleanUrl = apiUrlInput.trim();
@@ -382,14 +352,9 @@ export default function CameraScreen() {
     Speech.speak('Đã cập nhật cấu hình kết nối mới thành công.', { language: TTS_LOCALE });
   };
 
-  // ============================================================
-  // Shutter sound
-  // ============================================================
-
   const playCameraSound = useCallback(async () => {
     try {
       const { sound } = await Audio.Sound.createAsync(
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         require('../../assets/sounds/shutter.mp3'),
         { shouldPlay: true, volume: 0.6 },
       );
@@ -400,28 +365,19 @@ export default function CameraScreen() {
         }
       });
     } catch (e) {
-      console.warn('[Sound] shutter.mp3 not found, skipping.', e);
     }
   }, []);
 
-  // ============================================================
-  // Volume button and Screenshot listeners
-  // ============================================================
-
   useEffect(() => {
     const volumeSubscription = VolumeManager.addVolumeListener((result) => {
-      console.log('[Volume] Trigger capture – value:', result.volume);
       if (Date.now() - lastResetTimeRef.current < 1500) {
-        console.log('[Volume] Cooldown active, ignore volume capture trigger');
         return;
       }
       debouncedCapture();
     });
 
     const screenshotSubscription = ScreenCapture.addScreenshotListener(() => {
-      console.log('[Screenshot] Trigger capture!');
       if (Date.now() - lastResetTimeRef.current < 1500) {
-        console.log('[Screenshot] Cooldown active, ignore screenshot capture trigger');
         return;
       }
       debouncedCapture();
@@ -433,14 +389,9 @@ export default function CameraScreen() {
     };
   }, [debouncedCapture]);
 
-  // ============================================================
-  // Speech recognition (expo-speech-recognition)
-  // ============================================================
-
   const startVoiceListening = useCallback(async () => {
     const permResult = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!permResult.granted) {
-      console.warn('[Voice] Microphone permission denied.');
       return;
     }
 
@@ -451,9 +402,7 @@ export default function CameraScreen() {
         continuous: true,
       });
       setIsListening(true);
-      console.log('[Voice] Started listening.');
     } catch (e) {
-      console.error('[Voice] Failed to start:', e);
     }
   }, []);
 
@@ -461,48 +410,34 @@ export default function CameraScreen() {
     try {
       ExpoSpeechRecognitionModule.stop();
       setIsListening(false);
-      console.log('[Voice] Stopped.');
     } catch (e) {
-      console.warn('[Voice] Stop error:', e);
     }
   }, []);
 
-  // Nhận dạng giọng nói thông minh hỗ trợ demo không chạm
   useSpeechRecognitionEvent('result', (event) => {
     const transcript = event.results?.[0]?.transcript?.toLowerCase().trim() ?? '';
     if (!transcript) return;
-
-    console.log('[Voice] transcript:', transcript);
-
-
-    // 1. Lệnh chụp ảnh (khi ở máy ảnh)
+    
     if (captureState === 'idle') {
       if (Date.now() - lastResetTimeRef.current < 1500) {
-        console.log('[Voice] Cooldown active, ignore voice capture trigger');
         return;
       }
       const matched = CAPTURE_KEYWORDS.some((kw) => transcript.includes(kw));
       if (matched) {
-        console.log('[Voice] Capture keyword matched!');
         debouncedCapture();
         return;
       }
     }
 
-    // 2. Lệnh ở màn hình kết quả
     if (captureState === 'idle_with_result') {
-      // 2a. Reset / Chụp lại
       const matchedReset = RESET_KEYWORDS.some((kw) => transcript.includes(kw));
       if (matchedReset) {
-        console.log('[Voice] Reset keyword matched!');
         resetToCamera();
         return;
       }
 
-      // 2b. Đọc lại mô tả
       const matchedSpeak = SPEAK_KEYWORDS.some((kw) => transcript.includes(kw));
       if (matchedSpeak) {
-        console.log('[Voice] Speak keyword matched!');
         speakCaption();
         return;
       }
@@ -510,28 +445,20 @@ export default function CameraScreen() {
   });
 
   useSpeechRecognitionEvent('error', (event) => {
-    console.warn('[Voice] Recognition error:', event.error);
     setIsListening(false);
     setTimeout(() => startVoiceListening(), 2000);
   });
 
   useSpeechRecognitionEvent('end', () => {
-    console.log('[Voice] Recognition ended – restarting...');
     setIsListening(false);
     setTimeout(() => startVoiceListening(), 500);
   });
 
-  // ============================================================
-  // Lifecycle & Initial Permissions (Phương án tối ưu TalkBack/VoiceOver)
-  // ============================================================
-
   useEffect(() => {
-    // Chỉ thực hiện khi cả 2 hooks đã trả về kết quả trạng thái hiện tại (không còn null)
     if (!micPermission || !cameraPermission) {
       return;
     }
 
-    // Đảm bảo chỉ chạy chuỗi yêu cầu quyền một lần
     if (hasRequestedPermissions.current) {
       return;
     }
@@ -542,55 +469,43 @@ export default function CameraScreen() {
         let micGranted = micPermission.granted;
         let camGranted = cameraPermission.granted;
 
-        // --- 1. Xử lý quyền Microphone ---
         if (!micGranted) {
-          // Thông báo cho người dùng biết hệ thống sắp hiện Dialog xin quyền
           await Speech.speak(
             'VisionVoice cần quyền sử dụng micro để nhận lệnh giọng nói. Vui lòng nhấn đúp vào nút Cho phép trên màn hình.', 
             { language: TTS_LOCALE }
           );
           
-          // QUAN TRỌNG: Chờ 3 giây để câu nói trên kết thúc hoàn toàn trước khi Dialog xuất hiện
           await new Promise((resolve) => setTimeout(resolve, 3000));
           
-          // Kích hoạt Dialog hệ thống - Luồng code sẽ "tạm dừng" tại đây cho đến khi người dùng bấm xong
           const resultMic = await requestMicPermission();
           micGranted = resultMic.granted;
         }
 
-        // Kiểm tra kết quả quyền Micro để bật tính năng nghe
         if (micGranted) {
           await startVoiceListening();
         } else {
           await Speech.speak('Không có quyền micro, bạn sẽ không thể điều khiển bằng giọng nói.', { language: TTS_LOCALE });
-          // Chờ nói xong thông báo lỗi
           await new Promise((resolve) => setTimeout(resolve, 2500));
         }
 
-        // --- 2. Xử lý quyền Camera ---
         if (!camGranted) {
-          // Tiếp tục thông báo dẫn hướng bằng âm thanh
           await Speech.speak(
             'VisionVoice cần quyền truy cập Camera để nhận diện hình ảnh. Vui lòng nhấn đúp vào nút Cho phép tiếp theo.', 
             { language: TTS_LOCALE }
           );
           
-          // Chờ 3 giây để câu nói kết thúc
           await new Promise((resolve) => setTimeout(resolve, 3000));
           
-          // Kích hoạt Dialog hệ thống cho Camera
           const resultCam = await requestCameraPermission();
           camGranted = resultCam.granted;
         }
 
-        // --- 3. Hoàn tất và Chào mừng ---
         if (camGranted) {
           setPermissionsReady(true);
           
-          // Lời chào khi mọi thứ đã sẵn sàng
           const welcomeMessage = MOCK_MODE
             ? 'Xin chào! VisionVoice đã sẵn sàng ở chế độ thử nghiệm. Hãy bấm chụp, chọn ảnh hoặc ra lệnh bằng giọng nói.'
-            : 'Xin chào! VisionVoice đã sẵn sàng. Hãy bấm chụp, chọn ảnh từ thư viện hoặc dùng giọng nói.';
+            : 'Xin chào! VisionVoice đã sẵn sàng.';
             
           await Speech.speak(welcomeMessage, { language: TTS_LOCALE });
         } else {
@@ -598,7 +513,6 @@ export default function CameraScreen() {
         }
 
       } catch (error) {
-        console.error("Lỗi trong quá trình xin quyền: ", error);
       }
     };
 
@@ -611,11 +525,6 @@ export default function CameraScreen() {
     };
   }, [micPermission, cameraPermission, startVoiceListening, stopVoiceListening]);
 
-  // ============================================================
-  // UI Render
-  // ============================================================
-
-  // Màn hình loading khởi động ban đầu
   if (!permissionsReady) {
     return (
       <View style={styles.centeredContainer}>
@@ -635,23 +544,21 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
-      {/* 1. Màn hình Live Camera hoặc Màn hình Xem kết quả */}
       {!hasResult ? (
         <View style={StyleSheet.absoluteFill}>
           <CameraView
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             facing={facing}
+            pictureSize={selectedPictureSize}
+            onCameraReady={onCameraReady}
           />
-          {/* Overlay Gradient tối để hiển thị HUD rõ nét */}
           <View style={styles.overlayTop} pointerEvents="none" />
           <View style={styles.overlayBottom} pointerEvents="none" />
         </View>
       ) : (
-        // Giao diện kết quả (Xem ảnh đã chụp/chọn và xem caption)
         <View style={styles.resultContainer}>
           <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
-            {/* Tiêu đề kết quả */}
             <View style={styles.resultHeader}>
               <Text style={styles.resultTitle}>KẾT QUẢ PHÂN TÍCH</Text>
               <View style={styles.gritBadge}>
@@ -659,7 +566,6 @@ export default function CameraScreen() {
               </View>
             </View>
 
-            {/* Khung hiển thị ảnh cực sang trọng */}
             <View style={styles.imageCardOuter}>
               <View style={styles.imageCard}>
                 <Image
@@ -670,7 +576,6 @@ export default function CameraScreen() {
               </View>
             </View>
 
-            {/* Thẻ mô tả dạng Glassmorphism */}
             <View style={styles.captionCard}>
               <View style={styles.captionIconRow}>
                 <MaterialCommunityIcons name="comment-text-multiple-outline" size={20} color="#818CF8" />
@@ -688,7 +593,6 @@ export default function CameraScreen() {
               )}
             </View>
             
-            {/* Nút Đọc/Dừng bằng giọng nói */}
             {generatedCaption !== '' && (
               <TouchableOpacity
                 style={[
@@ -710,8 +614,6 @@ export default function CameraScreen() {
                 {isSpeaking && <ActivityIndicator size="small" color="#FFF" style={{ marginLeft: 8 }} />}
               </TouchableOpacity>
             )}
-
-            {/* Các nút hành động phản hồi */}
             <View style={styles.actionButtonRow}>
               <TouchableOpacity
                 style={[styles.actionButton, styles.captureNextButton]}
@@ -737,7 +639,6 @@ export default function CameraScreen() {
         </View>
       )}
 
-      {/* 2. HUD trên cùng (Tiêu đề, config, trạng thái mic) */}
       <View style={styles.hudTop}>
         <View style={styles.hudLeft}>
           <Text style={styles.appTitle}>VisionVoice</Text>
@@ -749,13 +650,11 @@ export default function CameraScreen() {
         </View>
 
         <View style={styles.hudRight}>
-          {/* Trạng thái lắng nghe giọng nói */}
           <View style={styles.listeningBadge}>
             <View style={[styles.dot, isListening ? styles.dotGreen : styles.dotGray]} />
             <Text style={styles.listeningText}>{isListening ? 'Giọng nói ON' : 'Mute'}</Text>
           </View>
-
-          {/* Nút cài đặt để cập nhật URL Colab */}
+{/* 
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={() => {
@@ -766,28 +665,15 @@ export default function CameraScreen() {
             accessibilityLabel="Cài đặt máy chủ"
           >
             <Ionicons name="settings-sharp" size={22} color="#FFF" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
 
-      {/* 3. Phông che phủ trạng thái Loading cực xịn (khi chụp hoặc phân tích) */}
-      {isProcessing && !hasResult && (
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingCard}>
-            <ActivityIndicator size="large" color="#818CF8" />
-            <Text style={styles.loadingTextOverlay}>{statusText}</Text>
-            <Text style={styles.loadingSubtitleOverlay}>Mô hình GRIT đang xử lý bằng GPU Colab</Text>
-          </View>
-        </View>
-      )}
-
-      {/* 4. Điều khiển phía dưới ở chế độ Máy ảnh trực tiếp */}
       {!hasResult && (
         <View style={styles.bottomBar}>
           <Text style={styles.hint}>Nói "Chụp ảnh", chụp phím âm lượng hoặc chọn từ thư viện</Text>
 
           <View style={styles.controlsRow}>
-            {/* Nút chọn ảnh từ thư viện */}
             <TouchableOpacity
               style={styles.galleryTrigger}
               onPress={pickImage}
@@ -798,7 +684,6 @@ export default function CameraScreen() {
               <Ionicons name="images-outline" size={26} color="#FFF" />
             </TouchableOpacity>
 
-            {/* Nút chụp camera trung tâm */}
             <TouchableOpacity
               accessible
               accessibilityRole="button"
@@ -809,10 +694,13 @@ export default function CameraScreen() {
               disabled={isProcessing}
               activeOpacity={0.8}
             >
-              <View style={styles.captureInner} />
+              {captureState === 'capturing' ? (
+                <ActivityIndicator size="large" color="#6366F1" />
+              ) : (
+                <View style={styles.captureInner} />
+              )}
             </TouchableOpacity>
 
-            {/* Nút đổi camera (Placeholder cân bằng layout) */}
             <View style={styles.layoutPlaceholder}>
               <Ionicons name={isListening ? "mic" : "mic-off"} size={24} color={isListening ? "#818CF8" : "#64748B"} />
             </View>
@@ -823,7 +711,6 @@ export default function CameraScreen() {
       )}
 
 
-      {/* 5. Cửa sổ cài đặt kết nối API Colab */}
       <Modal
         visible={isSettingsOpen}
         transparent
@@ -885,10 +772,6 @@ export default function CameraScreen() {
   );
 }
 
-// ============================================================
-// Styles
-// ============================================================
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -923,8 +806,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.8,
   },
-
-  // Gradient Overlays
   overlayTop: {
     position: 'absolute',
     top: 0,
@@ -941,8 +822,6 @@ const styles = StyleSheet.create({
     height: 220,
     backgroundColor: 'rgba(7, 7, 14, 0.75)',
   },
-
-  // HUD trên cùng
   hudTop: {
     position: 'absolute',
     top: 0,
@@ -1121,8 +1000,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#94A3B8',
   },
-
-  // Nút TTS
   ttsButton: {
     width: '100%',
     height: 52,
@@ -1153,8 +1030,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1,
   },
-
-  // Hàng nút thao tác
   actionButtonRow: {
     flexDirection: 'row',
     gap: 12,
@@ -1183,8 +1058,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-
-  // Thanh điều khiển máy ảnh ở dưới
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -1250,8 +1123,6 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
-
-  // Loading Overlay
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(7, 7, 14, 0.85)',
@@ -1286,8 +1157,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: 'center',
   },
-
-  // Settings Modal
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
