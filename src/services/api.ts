@@ -18,17 +18,14 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  console.log('[API] →', config.method?.toUpperCase(), config.baseURL + (config.url || ''));
   return config;
 });
 
 apiClient.interceptors.response.use(
   (response) => {
-    console.log('[API] ← status:', response.status);
     return response;
   },
   (error: AxiosError) => {
-    console.error('[API] ✗ error:', error.message);
     return Promise.reject(error);
   },
 );
@@ -39,7 +36,6 @@ export function updateApiBaseUrl(newUrl: string) {
     cleanUrl = 'http://' + cleanUrl;
   }
   apiClient.defaults.baseURL = cleanUrl;
-  console.log('[API] Base URL updated to:', cleanUrl);
 }
 
 export async function analyzeImage(imageUri: string): Promise<string> {
@@ -67,15 +63,8 @@ export async function analyzeImage(imageUri: string): Promise<string> {
     if (!description) {
       throw new Error('Backend trả về mô tả rỗng.');
     }
-
-    console.log('[API] Generated caption:', description);
     return description;
   } catch (err) {
-    const axiosErr = err as AxiosError<{ error?: string; details?: string }>;
-    const serverMsg = axiosErr.response?.data?.error;
-    const serverDetails = axiosErr.response?.data?.details;
-    
-    console.error('[API] analyzeImage failed:', serverMsg || axiosErr.message, serverDetails ? `(Chi tiết: ${serverDetails})` : '');
     return ERROR_MESSAGE;
   }
 }

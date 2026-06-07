@@ -416,6 +416,7 @@ export default function CameraScreen() {
 
   useSpeechRecognitionEvent('result', (event) => {
     const transcript = event.results?.[0]?.transcript?.toLowerCase().trim() ?? '';
+    console.log('Capture detected', transcript);
     if (!transcript) return;
     
     if (captureState === 'idle') {
@@ -702,7 +703,7 @@ export default function CameraScreen() {
             </TouchableOpacity>
 
             <View style={styles.layoutPlaceholder}>
-              <Ionicons name={isListening ? "mic" : "mic-off"} size={24} color={isListening ? "#818CF8" : "#64748B"} />
+              {/* <Ionicons name={isListening ? "mic" : "mic-off"} size={24} color={isListening ? "#818CF8" : "#64748B"} /> */}
             </View>
           </View>
 
@@ -1060,7 +1061,7 @@ const styles = StyleSheet.create({
   },
   bottomBar: {
     position: 'absolute',
-    bottom: 0,
+    bottom: 40,
     left: 0,
     right: 0,
     alignItems: 'center',
