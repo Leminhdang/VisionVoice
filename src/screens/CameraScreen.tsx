@@ -104,136 +104,26 @@ export default function CameraScreen() {
         setSelectedPictureSize(bestSize);
       }
     } catch (err) {
+      console.warn('Lỗi khi lấy kích thước ảnh:', err);
     }
   }, []);
 
 
-  const captureAndAnalyze = useCallback(async () => {
-    if (captureState !== 'idle' && captureState !== 'idle_with_result') {
-      return;
-    }
-    if (!cameraRef.current) return;
+  const resetState = useCallback(() => {
+    setCaptureState('idle');
+    setSelectedImage(null);
+    setGeneratedCaption('');
+    setStatusText('');
+    setIsSpeaking(false);
+    lastResetTimeRef.current = Date.now();
+  }, []);
 
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch((e) => console.warn(e));
-      playCameraSound();
-      setCaptureState('capturing');
-      setStatusText('Đang chụp ảnh...');
-      setSelectedImage(null);
-      setGeneratedCaption('');
-
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.4,
-      });
-
-      if (!photo?.uri) throw new Error('Không lấy được URI ảnh.');
-
-      setSelectedImage(photo.uri);
-      setCaptureState('analyzing');
-      setStatusText('GRIT đang phân tích...');
-      Speech.speak(CAPTURE_FEEDBACK_PHRASE, { language: TTS_LOCALE });
-
-      const manipulated = await ImageManipulator.manipulateAsync(
-        photo.uri,
-        [{ resize: { width: 800 } }],
-        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
-      );
-
-      let description: string;
-      if (MOCK_MODE) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        description = MOCK_DESCRIPTION;
-      } else {
-        description = await analyzeImage(manipulated.uri);
-      }
-
-      setGeneratedCaption(description);
-
-      setCaptureState('speaking');
-      setStatusText('Đang đọc kết quả...');
-      setIsSpeaking(true);
-
-      await Speech.speak(description, {
-        language: TTS_LOCALE,
-        pitch: 1.0,
-        rate: 0.9,
-        onDone: () => {
-          setCaptureState('idle');
-          setSelectedImage(null);
-          setGeneratedCaption('');
-          setStatusText('');
-          setIsSpeaking(false);
-          lastResetTimeRef.current = Date.now();
-        },
-        onError: () => {
-          setCaptureState('idle');
-          setSelectedImage(null);
-          setGeneratedCaption('');
-          setStatusText('');
-          setIsSpeaking(false);
-          lastResetTimeRef.current = Date.now();
-        },
-      });
-    } catch (err) {
-      setIsSpeaking(true);
-      setStatusText('Lỗi kết nối server.');
-      const errMsg = 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại server.';
-      setGeneratedCaption(errMsg);
-
-      Speech.speak(errMsg, {
-        language: TTS_LOCALE,
-        onDone: () => {
-          setCaptureState('idle');
-          setSelectedImage(null);
-          setGeneratedCaption('');
-          setStatusText('');
-          setIsSpeaking(false);
-          lastResetTimeRef.current = Date.now();
-        },
-        onError: () => {
-          setCaptureState('idle');
-          setSelectedImage(null);
-          setGeneratedCaption('');
-          setStatusText('');
-          setIsSpeaking(false);
-          lastResetTimeRef.current = Date.now();
-        }
-      });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    }
-  }, [captureState]);
-
-  const debouncedCapture = useDebounceCallback(captureAndAnalyze as (...args: unknown[]) => void);
-
-  const pickImage = async () => {
-    if (captureState !== 'idle' && captureState !== 'idle_with_result') return;
-    try {
-      await Speech.stop();
-      setIsSpeaking(false);
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const pickedUri = result.assets[0].uri;
-        await analyzeSelectedImage(pickedUri);
-      }
-    } catch (e) {
-      Speech.speak('Không thể mở thư viện ảnh.', { language: TTS_LOCALE });
-    }
-  };
-
-  const analyzeSelectedImage = async (uri: string) => {
+  const processImage = async (uri: string, isFromCamera: boolean) => {
     try {
       setCaptureState('analyzing');
       setStatusText('GRIT đang phân tích...');
       setGeneratedCaption('');
       Speech.speak(CAPTURE_FEEDBACK_PHRASE, { language: TTS_LOCALE });
-
-      setSelectedImage(uri);
 
       const manipulated = await ImageManipulator.manipulateAsync(
         uri,
@@ -258,61 +148,106 @@ export default function CameraScreen() {
         language: TTS_LOCALE,
         pitch: 1.0,
         rate: 0.9,
-        onDone: () => {
-          setCaptureState('idle');
-          setSelectedImage(null);
-          setGeneratedCaption('');
-          setStatusText('');
-          setIsSpeaking(false);
-          lastResetTimeRef.current = Date.now();
-        },
-        onError: () => {
-          setCaptureState('idle');
-          setSelectedImage(null);
-          setGeneratedCaption('');
-          setStatusText('');
-          setIsSpeaking(false);
-          lastResetTimeRef.current = Date.now();
-        },
+        onDone: resetState,
+        onError: resetState,
       });
     } catch (err) {
+      console.warn('Lỗi khi phân tích ảnh:', err);
       setIsSpeaking(true);
-      const errMsg = 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại kết nối.';
+      if (isFromCamera) {
+        setStatusText('Lỗi kết nối server.');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      const errMsg = isFromCamera
+        ? 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại server.'
+        : 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại kết nối.';
+      
       setGeneratedCaption(errMsg);
 
       Speech.speak(errMsg, {
         language: TTS_LOCALE,
-        onDone: () => {
-          setCaptureState('idle');
-          setSelectedImage(null);
-          setGeneratedCaption('');
-          setStatusText('');
-          setIsSpeaking(false);
-          lastResetTimeRef.current = Date.now();
-        },
-        onError: () => {
-          setCaptureState('idle');
-          setSelectedImage(null);
-          setGeneratedCaption('');
-          setStatusText('');
-          setIsSpeaking(false);
-          lastResetTimeRef.current = Date.now();
+        onDone: resetState,
+        onError: resetState,
+      });
+    }
+  };
+
+  const playCameraSound = useCallback(async () => {
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        require('../../assets/sounds/shutter.mp3'),
+        { shouldPlay: true, volume: 0.6 },
+      );
+      soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
         }
       });
+    } catch (e) {
+      console.warn('Lỗi khi phát âm thanh máy ảnh:', e);
+    }
+  }, []);
+
+  const captureAndAnalyze = useCallback(async () => {
+    if (captureState !== 'idle' && captureState !== 'idle_with_result') {
+      return;
+    }
+    if (!cameraRef.current) return;
+
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch((e) => console.warn(e));
+      playCameraSound();
+      setCaptureState('capturing');
+      setStatusText('Đang chụp ảnh...');
+      setSelectedImage(null);
+      setGeneratedCaption('');
+
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.4,
+      });
+
+      if (!photo?.uri) throw new Error('Không lấy được URI ảnh.');
+
+      setSelectedImage(photo.uri);
+      await processImage(photo.uri, true);
+    } catch (err) {
+      console.warn('Lỗi khi chụp ảnh:', err);
+      resetState();
+    }
+  }, [captureState, playCameraSound, resetState]);
+
+  const debouncedCapture = useDebounceCallback(captureAndAnalyze as (...args: unknown[]) => void);
+
+  const pickImage = async () => {
+    if (captureState !== 'idle' && captureState !== 'idle_with_result') return;
+    try {
+      await Speech.stop();
+      setIsSpeaking(false);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const pickedUri = result.assets[0].uri;
+        setSelectedImage(pickedUri);
+        await processImage(pickedUri, false);
+      }
+    } catch (e) {
+      console.warn('Lỗi khi chọn ảnh:', e);
+      Speech.speak('Không thể mở thư viện ảnh.', { language: TTS_LOCALE });
     }
   };
 
   const resetToCamera = useCallback(() => {
     Speech.stop();
-    setCaptureState('idle');
-    setSelectedImage(null);
-    setGeneratedCaption('');
-    setStatusText('');
-    setIsSpeaking(false);
-    lastResetTimeRef.current = Date.now();
+    resetState();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Speech.speak('Đã quay lại chế độ máy ảnh.', { language: TTS_LOCALE });
-  }, []);
+  }, [resetState]);
 
   const speakCaption = async () => {
     if (!generatedCaption) return;
@@ -335,6 +270,7 @@ export default function CameraScreen() {
         onError: () => setIsSpeaking(false),
       });
     } catch (e) {
+      console.warn('Lỗi khi đọc mô tả:', e);
       setIsSpeaking(false);
     }
   };
@@ -352,21 +288,6 @@ export default function CameraScreen() {
     Speech.speak('Đã cập nhật cấu hình kết nối mới thành công.', { language: TTS_LOCALE });
   };
 
-  const playCameraSound = useCallback(async () => {
-    try {
-      const { sound } = await Audio.Sound.createAsync(
-        require('../../assets/sounds/shutter.mp3'),
-        { shouldPlay: true, volume: 0.6 },
-      );
-      soundRef.current = sound;
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-        }
-      });
-    } catch (e) {
-    }
-  }, []);
 
   useEffect(() => {
     const volumeSubscription = VolumeManager.addVolumeListener((result) => {
@@ -403,6 +324,7 @@ export default function CameraScreen() {
       });
       setIsListening(true);
     } catch (e) {
+      console.warn('Lỗi khi bắt đầu nhận diện giọng nói:', e);
     }
   }, []);
 
@@ -411,6 +333,7 @@ export default function CameraScreen() {
       ExpoSpeechRecognitionModule.stop();
       setIsListening(false);
     } catch (e) {
+      console.warn('Lỗi khi dừng nhận diện giọng nói:', e);
     }
   }, []);
 
@@ -514,6 +437,7 @@ export default function CameraScreen() {
         }
 
       } catch (error) {
+        console.warn('Lỗi trong quá trình xin quyền:', error);
       }
     };
 
