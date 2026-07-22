@@ -23,6 +23,12 @@ import {
   useCameraPermissions,
   useMicrophonePermissions,
 } from 'expo-camera';
+import {
+  Camera as VisionCamera,
+  useCameraDevice,
+  useCameraPermission,
+  Frame,
+} from 'react-native-vision-camera';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { Audio } from 'expo-av';
@@ -38,6 +44,7 @@ import {
 
 import { analyzeImage, updateApiBaseUrl } from '../services/api';
 import { useDebounceCallback } from '../hooks/useDebounceCallback';
+import { useObstacleDetection } from '../hooks/useObstacleDetection';
 import {
   CAPTURE_FEEDBACK_PHRASE,
   CAPTURE_KEYWORDS,
@@ -60,14 +67,17 @@ const SPEAK_KEYWORDS = [
   'đọc lại', 'nghe lại', 'đọc mô tả', 'đọc', 'doc lai', 'nghe lai', 'doc mo ta', 'doc', 'đọc lại kết quả', 'nghe lại kết quả'
 ];
 
-
 export default function CameraScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
+  const { hasPermission: hasVisionPermission, requestPermission: requestVisionPermission } = useCameraPermission();
+
   const cameraRef = useRef<CameraView>(null);
+  const visionCameraRef = useRef<any>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const hasRequestedPermissions = useRef(false);
   const lastResetTimeRef = useRef<number>(0);
+
   const [facing] = useState<CameraType>('back');
   const [captureState, setCaptureState] = useState<CaptureState>('idle');
   const [statusText, setStatusText] = useState('');
@@ -80,6 +90,21 @@ export default function CameraScreen() {
   const [apiUrlInput, setApiUrlInput] = useState<string>(API_BASE_URL);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedPictureSize, setSelectedPictureSize] = useState<string | undefined>(undefined);
+
+  // Bật/Tắt chế độ Quét Vật Cản Offline
+  const [isObstacleEnabled, setIsObstacleEnabled] = useState(true);
+
+  // Tắt quét cảnh báo tạm thời khi đang chụp / phân tích / đọc kết quả từ Gemini
+  const isScanningActive = isObstacleEnabled && (captureState === 'idle' || captureState === 'idle_with_result');
+
+  // Custom Hook: Quét vật cản Offline với ML Kit Object Detection
+  const { threatLevel, maxRatio, detectedCount, frameProcessor } = useObstacleDetection({
+    isEnabled: isScanningActive,
+    alertIntervalMs: 1500,
+  });
+
+  // Vision Camera device
+  const visionDevice = useCameraDevice('back');
 
   const onCameraReady = useCallback(async () => {
     if (!cameraRef.current) return;
@@ -107,7 +132,6 @@ export default function CameraScreen() {
       console.warn('Lỗi khi lấy kích thước ảnh:', err);
     }
   }, []);
-
 
   const resetState = useCallback(() => {
     setCaptureState('idle');
@@ -161,7 +185,7 @@ export default function CameraScreen() {
       const errMsg = isFromCamera
         ? 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại server.'
         : 'Đã xảy ra lỗi khi phân tích ảnh. Vui lòng kiểm tra lại kết nối.';
-      
+
       setGeneratedCaption(errMsg);
 
       Speech.speak(errMsg, {
@@ -193,24 +217,36 @@ export default function CameraScreen() {
     if (captureState !== 'idle' && captureState !== 'idle_with_result') {
       return;
     }
-    if (!cameraRef.current) return;
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch((e) => console.warn(e));
       playCameraSound();
+
       setCaptureState('capturing');
       setStatusText('Đang chụp ảnh...');
       setSelectedImage(null);
       setGeneratedCaption('');
 
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.4,
-      });
+      let capturedUri: string | null = null;
 
-      if (!photo?.uri) throw new Error('Không lấy được URI ảnh.');
+      // Ưu tiên chụp ảnh bằng Vision Camera (Online Gemini Stream)
+      if (visionCameraRef.current) {
+        const photo = await visionCameraRef.current.takePhoto({
+          qualityPrioritization: 'speed',
+          flash: 'off',
+        });
+        capturedUri = photo.path.startsWith('file://') ? photo.path : `file://${photo.path}`;
+      } else if (cameraRef.current) {
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.5,
+        });
+        capturedUri = photo?.uri || null;
+      }
 
-      setSelectedImage(photo.uri);
-      await processImage(photo.uri, true);
+      if (!capturedUri) throw new Error('Không lấy được URI ảnh.');
+
+      setSelectedImage(capturedUri);
+      await processImage(capturedUri, true);
     } catch (err) {
       console.warn('Lỗi khi chụp ảnh:', err);
       resetState();
@@ -288,9 +324,8 @@ export default function CameraScreen() {
     Speech.speak('Đã cập nhật cấu hình kết nối mới thành công.', { language: TTS_LOCALE });
   };
 
-
   useEffect(() => {
-    const volumeSubscription = VolumeManager.addVolumeListener((result) => {
+    const volumeSubscription = VolumeManager.addVolumeListener(() => {
       if (Date.now() - lastResetTimeRef.current < 1500) {
         return;
       }
@@ -339,9 +374,8 @@ export default function CameraScreen() {
 
   useSpeechRecognitionEvent('result', (event) => {
     const transcript = event.results?.[0]?.transcript?.toLowerCase().trim() ?? '';
-    console.log('Capture detected', transcript);
     if (!transcript) return;
-    
+
     if (captureState === 'idle') {
       if (Date.now() - lastResetTimeRef.current < 1500) {
         return;
@@ -368,7 +402,7 @@ export default function CameraScreen() {
     }
   });
 
-  useSpeechRecognitionEvent('error', (event) => {
+  useSpeechRecognitionEvent('error', () => {
     setIsListening(false);
     setTimeout(() => startVoiceListening(), 2000);
   });
@@ -393,14 +427,18 @@ export default function CameraScreen() {
         let micGranted = micPermission.granted;
         let camGranted = cameraPermission.granted;
 
+        if (!hasVisionPermission) {
+          await requestVisionPermission();
+        }
+
         if (!micGranted) {
           await Speech.speak(
-            'VisionVoice cần quyền sử dụng micro để nhận lệnh giọng nói. Vui lòng nhấn đúp vào nút Cho phép trên màn hình.', 
+            'VisionVoice cần quyền sử dụng micro để nhận lệnh giọng nói. Vui lòng nhấn đúp vào nút Cho phép trên màn hình.',
             { language: TTS_LOCALE }
           );
-          
+
           await new Promise((resolve) => setTimeout(resolve, 3000));
-          
+
           const resultMic = await requestMicPermission();
           micGranted = resultMic.granted;
         }
@@ -414,28 +452,27 @@ export default function CameraScreen() {
 
         if (!camGranted) {
           await Speech.speak(
-            'VisionVoice cần quyền truy cập Camera để nhận diện hình ảnh. Vui lòng nhấn đúp vào nút Cho phép tiếp theo.', 
+            'VisionVoice cần quyền truy cập Camera để nhận diện hình ảnh. Vui lòng nhấn đúp vào nút Cho phép tiếp theo.',
             { language: TTS_LOCALE }
           );
-          
+
           await new Promise((resolve) => setTimeout(resolve, 3000));
-          
+
           const resultCam = await requestCameraPermission();
           camGranted = resultCam.granted;
         }
 
         if (camGranted) {
           setPermissionsReady(true);
-          
+
           const welcomeMessage = MOCK_MODE
-            ? 'Xin chào! VisionVoice đã sẵn sàng ở chế độ thử nghiệm. Hãy bấm chụp, chọn ảnh hoặc ra lệnh bằng giọng nói.'
+            ? 'Xin chào! VisionVoice đã sẵn sàng ở chế độ thử nghiệm với Quét Vật Cản Offline.'
             : 'Xin chào! VisionVoice đã sẵn sàng.';
-            
+
           await Speech.speak(welcomeMessage, { language: TTS_LOCALE });
         } else {
           await Speech.speak('Không có quyền camera, ứng dụng không thể nhận diện hình ảnh giúp bạn.', { language: TTS_LOCALE });
         }
-
       } catch (error) {
         console.warn('Lỗi trong quá trình xin quyền:', error);
       }
@@ -448,16 +485,16 @@ export default function CameraScreen() {
       soundRef.current?.unloadAsync();
       Speech.stop();
     };
-  }, [micPermission, cameraPermission, startVoiceListening, stopVoiceListening]);
+  }, [micPermission, cameraPermission, hasVisionPermission, requestVisionPermission, requestCameraPermission, requestMicPermission, startVoiceListening, stopVoiceListening]);
 
   if (!permissionsReady) {
     return (
       <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" color="#6366F1" />
-        <Text style={styles.infoText}>Đang khởi động VisionVoice...</Text>
+        <Text style={styles.infoText}>Đang khởi động VisionVoice & Quét Vật Cản...</Text>
         {MOCK_MODE && (
           <View style={styles.mockBadge}>
-            <Text style={styles.mockBadgeText}>🧪 CHẾ ĐỘ THỬ NGHIỆM</Text>
+            <Text style={styles.mockBadgeText}>🧪 CHẾ ĐỘ THỬ NGHIỆM AI</Text>
           </View>
         )}
       </View>
@@ -467,19 +504,64 @@ export default function CameraScreen() {
   const isProcessing = captureState === 'capturing' || captureState === 'analyzing' || captureState === 'speaking';
   const hasResult = selectedImage !== null;
 
+  // Lấy kiểu badge giao diện dựa trên ThreatLevel
+  const getThreatStyle = () => {
+    switch (threatLevel) {
+      case 'danger':
+        return { backgroundColor: '#EF4444', icon: 'alert-circle', text: 'NGUY HIỂM (DANGER)' };
+      case 'warning':
+        return { backgroundColor: '#F59E0B', icon: 'warning', text: 'CẢNH BÁO (WARNING)' };
+      case 'safe':
+      default:
+        return { backgroundColor: '#10B981', icon: 'shield-checkmark', text: 'AN TOÀN (SAFE)' };
+    }
+  };
+
+  const threatStyle = getThreatStyle();
+  const VisionCameraComponent = VisionCamera as any;
+
   return (
     <View style={styles.container}>
       {!hasResult ? (
         <View style={StyleSheet.absoluteFill}>
-          <CameraView
-            ref={cameraRef}
-            style={StyleSheet.absoluteFill}
-            facing={facing}
-            pictureSize={selectedPictureSize}
-            onCameraReady={onCameraReady}
-          />
+          {visionDevice ? (
+            <VisionCameraComponent
+              ref={visionCameraRef}
+              style={StyleSheet.absoluteFill}
+              device={visionDevice}
+              isActive={true}
+              photo={true}
+              frameProcessor={frameProcessor}
+              pixelFormat="yuv"
+            />
+          ) : (
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              facing={facing}
+              pictureSize={selectedPictureSize}
+              onCameraReady={onCameraReady}
+            />
+          )}
+
           <View style={styles.overlayTop} pointerEvents="none" />
           <View style={styles.overlayBottom} pointerEvents="none" />
+
+          {/* Banner Cảnh Báo Vật Cản Thời Gian Thực (Offline AI HUD) */}
+          <View style={styles.obstacleHud}>
+            <View style={[styles.threatBadge, { backgroundColor: threatStyle.backgroundColor }]}>
+              <Ionicons name={threatStyle.icon as any} size={18} color="#FFF" style={{ marginRight: 6 }} />
+              <Text style={styles.threatBadgeText}>{threatStyle.text}</Text>
+            </View>
+            <View style={styles.obstacleInfoRow}>
+              <Text style={styles.obstacleInfoText}>
+                Diện tích vật cản: <Text style={styles.obstacleInfoHighlight}>{(maxRatio * 100).toFixed(1)}%</Text>
+              </Text>
+              <Text style={styles.obstacleInfoText}>
+                Số vật thể: <Text style={styles.obstacleInfoHighlight}>{detectedCount}</Text>
+              </Text>
+            </View>
+          </View>
         </View>
       ) : (
         <View style={styles.resultContainer}>
@@ -487,7 +569,7 @@ export default function CameraScreen() {
             <View style={styles.resultHeader}>
               <Text style={styles.resultTitle}>KẾT QUẢ PHÂN TÍCH</Text>
               <View style={styles.gritBadge}>
-                <Text style={styles.gritBadgeText}>🤖 GRIT KTVIC MODEL</Text>
+                <Text style={styles.gritBadgeText}>🤖 GEMINI BACKEND MODEL</Text>
               </View>
             </View>
 
@@ -504,12 +586,12 @@ export default function CameraScreen() {
             <View style={styles.captionCard}>
               <View style={styles.captionIconRow}>
                 <MaterialCommunityIcons name="comment-text-multiple-outline" size={20} color="#818CF8" />
-                <Text style={styles.captionCardTitle}>Mô tả tiếng Việt</Text>
+                <Text style={styles.captionCardTitle}>Mô tả tiếng Việt chi tiết</Text>
               </View>
               {captureState === 'analyzing' ? (
                 <View style={styles.captionLoadingRow}>
                   <ActivityIndicator size="small" color="#818CF8" style={{ marginRight: 10 }} />
-                  <Text style={styles.captionLoadingText}>Đang phân tích dữ liệu ảnh...</Text>
+                  <Text style={styles.captionLoadingText}>Đang gửi tới Gemini Backend...</Text>
                 </View>
               ) : (
                 <Text style={styles.captionText}>
@@ -517,7 +599,7 @@ export default function CameraScreen() {
                 </Text>
               )}
             </View>
-            
+
             {generatedCaption !== '' && (
               <TouchableOpacity
                 style={[
@@ -539,6 +621,7 @@ export default function CameraScreen() {
                 {isSpeaking && <ActivityIndicator size="small" color="#FFF" style={{ marginLeft: 8 }} />}
               </TouchableOpacity>
             )}
+
             <View style={styles.actionButtonRow}>
               <TouchableOpacity
                 style={[styles.actionButton, styles.captureNextButton]}
@@ -546,7 +629,7 @@ export default function CameraScreen() {
                 activeOpacity={0.8}
               >
                 <Ionicons name="camera" size={20} color="#FFF" style={{ marginRight: 6 }} />
-                <Text style={styles.actionButtonText}>CHỤP ẢNH MỚI</Text>
+                <Text style={styles.actionButtonText}>QUAY LẠI MÁY ẢNH</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -564,9 +647,10 @@ export default function CameraScreen() {
         </View>
       )}
 
+      {/* Header HUD */}
       <View style={styles.hudTop}>
         <View style={styles.hudLeft}>
-          <Text style={styles.appTitle}>VisionVoice</Text>
+          <Text style={styles.appTitle}>VisionVoice AI</Text>
           {MOCK_MODE && (
             <View style={styles.mockBadgeInline}>
               <Text style={styles.mockBadgeTextInline}>🧪 THỬ NGHIỆM</Text>
@@ -575,119 +659,107 @@ export default function CameraScreen() {
         </View>
 
         <View style={styles.hudRight}>
+          <TouchableOpacity
+            style={[styles.toggleScanButton, isObstacleEnabled ? styles.toggleScanActive : styles.toggleScanInactive]}
+            onPress={() => {
+              setIsObstacleEnabled(!isObstacleEnabled);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Speech.speak(isObstacleEnabled ? 'Đã tắt quét vật cản.' : 'Đã bật quét vật cản.', { language: TTS_LOCALE });
+            }}
+          >
+            <Ionicons name={isObstacleEnabled ? 'eye' : 'eye-off'} size={16} color="#FFF" style={{ marginRight: 4 }} />
+            <Text style={styles.toggleScanText}>{isObstacleEnabled ? 'Quét AI ON' : 'Quét OFF'}</Text>
+          </TouchableOpacity>
+
           <View style={styles.listeningBadge}>
             <View style={[styles.dot, isListening ? styles.dotGreen : styles.dotGray]} />
             <Text style={styles.listeningText}>{isListening ? 'Giọng nói ON' : 'Mute'}</Text>
           </View>
-{/* 
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() => {
-              setApiUrlInput(apiUrl);
-              setIsSettingsOpen(true);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }}
-            accessibilityLabel="Cài đặt máy chủ"
-          >
-            <Ionicons name="settings-sharp" size={22} color="#FFF" />
-          </TouchableOpacity> */}
         </View>
       </View>
 
       {!hasResult && (
         <View style={styles.bottomBar}>
-          <Text style={styles.hint}>Nói "Chụp ảnh", chụp phím âm lượng hoặc chọn từ thư viện</Text>
+          <Text style={styles.hint}>Nói "Chụp ảnh" hoặc bấm nút dưới để mô tả bằng Gemini</Text>
 
           <View style={styles.controlsRow}>
             <TouchableOpacity
-              style={styles.galleryTrigger}
+              style={styles.sideButton}
               onPress={pickImage}
+              disabled={isProcessing}
               accessibilityLabel="Chọn ảnh từ thư viện"
-              accessibilityHint="Mở thư viện ảnh để phân tích"
-              activeOpacity={0.75}
             >
-              <Ionicons name="images-outline" size={26} color="#FFF" />
+              <Ionicons name="images-outline" size={28} color="#FFF" />
+              <Text style={styles.sideButtonLabel}>Thư viện</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              accessible
-              accessibilityRole="button"
-              accessibilityLabel="Chụp ảnh"
-              accessibilityHint="Nhấn để chụp ảnh và phân tích mô tả bằng giọng nói"
-              style={[styles.captureButton, isProcessing && styles.captureButtonDisabled]}
-              onPress={debouncedCapture as () => void}
+              style={[styles.shutterButtonOuter, isProcessing && styles.shutterDisabled]}
+              onPress={debouncedCapture}
               disabled={isProcessing}
               activeOpacity={0.8}
+              accessibilityLabel="Bấm để chụp ảnh và mô tả"
             >
-              {captureState === 'capturing' ? (
-                <ActivityIndicator size="large" color="#6366F1" />
-              ) : (
-                <View style={styles.captureInner} />
-              )}
+              <View style={styles.shutterButtonInner}>
+                {isProcessing ? (
+                  <ActivityIndicator size="large" color="#6366F1" />
+                ) : (
+                  <Ionicons name="scan-circle" size={54} color="#6366F1" />
+                )}
+              </View>
             </TouchableOpacity>
 
-            <View style={styles.layoutPlaceholder}>
-              {/* <Ionicons name={isListening ? "mic" : "mic-off"} size={24} color={isListening ? "#818CF8" : "#64748B"} /> */}
-            </View>
+            <TouchableOpacity
+              style={styles.sideButton}
+              onPress={() => {
+                setApiUrlInput(apiUrl);
+                setIsSettingsOpen(true);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+              accessibilityLabel="Cài đặt cấu hình kết nối"
+            >
+              <Ionicons name="settings-outline" size={28} color="#FFF" />
+              <Text style={styles.sideButtonLabel}>Cài đặt</Text>
+            </TouchableOpacity>
           </View>
-
-          <View style={{ height: Platform.OS === 'ios' ? 30 : 16 }} />
         </View>
       )}
 
-
+      {/* Modal Cài Đặt Server API */}
       <Modal
         visible={isSettingsOpen}
-        transparent
-        animationType="fade"
+        transparent={true}
+        animationType="slide"
         onRequestClose={() => setIsSettingsOpen(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Ionicons name="link-sharp" size={22} color="#818CF8" />
-              <Text style={styles.modalTitle}>CẤU HÌNH LIÊN KẾT COLAB</Text>
-            </View>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Cấu hình kết nối Gemini Backend</Text>
 
-            <ScrollView bounces={false} style={styles.modalBody}>
-              <Text style={styles.modalDesc}>
-                Nhập public URL (ngrok/cloudflared) do máy chủ Colab cấp để ứng dụng gọi API mô hình GRIT fine-tune.
-              </Text>
+            <Text style={styles.inputLabel}>URL máy chủ Backend:</Text>
+            <TextInput
+              style={styles.textInput}
+              value={apiUrlInput}
+              onChangeText={setApiUrlInput}
+              placeholder="https://your-ngrok-domain.ngrok-free.dev"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
 
-              <View style={styles.urlInputRow}>
-                <Text style={styles.inputLabel}>Địa chỉ API:</Text>
-                <TextInput
-                  style={styles.urlInput}
-                  value={apiUrlInput}
-                  onChangeText={setApiUrlInput}
-                  placeholder="https://xxxxx.ngrok-free.app"
-                  placeholderTextColor="#64748B"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-
-              <Text style={styles.statusLabel}>
-                Địa chỉ hiện tại: <Text style={styles.statusLabelBold}>{apiUrl}</Text>
-              </Text>
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
+            <View style={styles.modalButtonRow}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => {
-                  setIsSettingsOpen(false);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
+                onPress={() => setIsSettingsOpen(false)}
               >
-                <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+                <Text style={styles.modalButtonText}>HỦY</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.modalButton, styles.saveButton]}
                 onPress={saveApiUrl}
               >
-                <Text style={styles.saveButtonText}>CẬP NHẬT</Text>
+                <Text style={styles.modalButtonText}>LƯU CẤU HÌNH</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -700,491 +772,392 @@ export default function CameraScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#07070E',
+    backgroundColor: '#000',
   },
   centeredContainer: {
     flex: 1,
-    backgroundColor: '#0A0A16',
-    alignItems: 'center',
+    backgroundColor: '#0F0F1A',
     justifyContent: 'center',
-    padding: 24,
-    gap: 16,
+    alignItems: 'center',
+    padding: 20,
   },
   infoText: {
-    color: '#E2E8F0',
+    color: '#E0E7FF',
     fontSize: 16,
-    fontWeight: '500',
+    marginTop: 16,
     textAlign: 'center',
   },
   mockBadge: {
-    backgroundColor: 'rgba(234,179,8,0.15)',
-    borderWidth: 1,
-    borderColor: '#EAB308',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginTop: 10,
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginTop: 12,
   },
   mockBadgeText: {
-    color: '#EAB308',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+    color: '#818CF8',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   overlayTop: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 180,
-    backgroundColor: 'rgba(7, 7, 14, 0.65)',
+    height: 120,
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   overlayBottom: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 220,
-    backgroundColor: 'rgba(7, 7, 14, 0.75)',
+    height: 180,
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   hudTop: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingTop: Platform.OS === 'ios' ? 54 : 36,
-    paddingHorizontal: 20,
+    top: Platform.OS === 'ios' ? 50 : 35,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     zIndex: 10,
   },
   hudLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   appTitle: {
     color: '#FFF',
     fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    textShadowColor: 'rgba(99, 102, 241, 0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
   mockBadgeInline: {
-    backgroundColor: 'rgba(234, 179, 8, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(234, 179, 8, 0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
   },
   mockBadgeTextInline: {
-    color: '#EAB308',
+    color: '#FFF',
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: 'bold',
   },
   hudRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+  },
+  toggleScanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  toggleScanActive: {
+    backgroundColor: '#6366F1',
+  },
+  toggleScanInactive: {
+    backgroundColor: '#4B5563',
+  },
+  toggleScanText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '600',
   },
   listeningBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   dot: {
     width: 6,
     height: 6,
     borderRadius: 3,
+    marginRight: 6,
   },
-  dotGreen: { 
+  dotGreen: {
     backgroundColor: '#10B981',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
   },
-  dotGray: { backgroundColor: '#64748B' },
+  dotGray: {
+    backgroundColor: '#9CA3AF',
+  },
   listeningText: {
-    color: '#CBD5E1',
+    color: '#E0E7FF',
     fontSize: 11,
-    fontWeight: '600',
   },
-  settingsButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+  obstacleHud: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 100 : 85,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(15, 15, 26, 0.85)',
+    borderRadius: 12,
+    padding: 10,
+    zIndex: 9,
     borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  threatBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 6,
   },
-
-  // Giao diện kết quả
-  resultContainer: {
-    flex: 1,
-    backgroundColor: '#090911',
+  threatBadgeText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontSize: 12,
   },
-  scrollContent: {
-    paddingTop: Platform.OS === 'ios' ? 110 : 90,
-    paddingHorizontal: 20,
+  obstacleInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  obstacleInfoText: {
+    color: '#9CA3AF',
+    fontSize: 12,
+  },
+  obstacleInfoHighlight: {
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+  bottomBar: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 40 : 24,
+    left: 0,
+    right: 0,
     alignItems: 'center',
   },
-  resultHeader: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  resultTitle: {
-    fontSize: 14,
-    color: '#818CF8',
-    fontWeight: '700',
-    letterSpacing: 2,
-    marginBottom: 4,
-  },
-  gritBadge: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.35)',
+  hint: {
+    color: '#E0E7FF',
+    fontSize: 12,
+    marginBottom: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
+    overflow: 'hidden',
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingHorizontal: 30,
+  },
+  sideButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 60,
+  },
+  sideButtonLabel: {
+    color: '#FFF',
+    fontSize: 11,
+    marginTop: 4,
+  },
+  shutterButtonOuter: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shutterButtonInner: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#FFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shutterDisabled: {
+    opacity: 0.5,
+  },
+  resultContainer: {
+    flex: 1,
+    backgroundColor: '#0F0F1A',
+  },
+  scrollContent: {
+    padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 35,
+  },
+  resultHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  resultTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  gritBadge: {
+    backgroundColor: '#3730A3',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   gritBadgeText: {
-    color: '#A5B4FC',
-    fontSize: 11,
-    fontWeight: '700',
+    color: '#C7D2FE',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   imageCardOuter: {
-    width: '100%',
-    aspectRatio: 4 / 3,
-    borderRadius: 20,
-    backgroundColor: '#131322',
-    shadowColor: '#818CF8',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 8,
-    marginBottom: 20,
-    padding: 6,
+    marginBottom: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   imageCard: {
-    flex: 1,
-    borderRadius: 14,
+    width: '100%',
+    height: 250,
+    backgroundColor: '#1E1E2E',
+    borderRadius: 16,
     overflow: 'hidden',
   },
   resultImage: {
-    flex: 1,
     width: '100%',
     height: '100%',
   },
   captionCard: {
-    width: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
+    backgroundColor: '#1E1E2E',
     borderRadius: 16,
-    padding: 18,
+    padding: 16,
     marginBottom: 16,
   },
   captionIconRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-    gap: 8,
+    marginBottom: 8,
   },
   captionCardTitle: {
+    color: '#818CF8',
     fontSize: 14,
-    color: '#A5B4FC',
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  captionText: {
-    fontSize: 17,
-    color: '#FFF',
-    lineHeight: 25,
-    fontWeight: '500',
+    fontWeight: '600',
+    marginLeft: 6,
   },
   captionLoadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   captionLoadingText: {
+    color: '#9CA3AF',
     fontSize: 14,
-    color: '#94A3B8',
+  },
+  captionText: {
+    color: '#F3F4F6',
+    fontSize: 16,
+    lineHeight: 24,
   },
   ttsButton: {
-    width: '100%',
-    height: 52,
-    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
-    elevation: 4,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginBottom: 16,
   },
   ttsButtonIdle: {
     backgroundColor: '#4F46E5',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
   },
   ttsButtonSpeaking: {
-    backgroundColor: '#10B981',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
+    backgroundColor: '#DC2626',
   },
   ttsButtonText: {
     color: '#FFF',
+    fontWeight: 'bold',
     fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 1,
   },
   actionButtonRow: {
     flexDirection: 'row',
-    gap: 12,
-    width: '100%',
+    justifyContent: 'space-between',
   },
   actionButton: {
     flex: 1,
-    height: 48,
-    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginHorizontal: 4,
   },
   captureNextButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: '#2563EB',
   },
   galleryNextButton: {
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    backgroundColor: '#475569',
   },
   actionButtonText: {
     color: '#FFF',
+    fontWeight: '600',
     fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
   },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    paddingBottom: 8,
-  },
-  hint: {
-    color: '#94A3B8',
-    fontSize: 12,
-    marginBottom: 16,
-    textAlign: 'center',
-    paddingHorizontal: 24,
-    lineHeight: 18,
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingHorizontal: 36,
-  },
-  galleryTrigger: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  captureButton: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    backgroundColor: '#FFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 5,
-    borderColor: '#6366F1',
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 15,
-    elevation: 12,
-  },
-  captureButtonDisabled: {
-    opacity: 0.5,
-  },
-  captureInner: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#6366F1',
-  },
-  layoutPlaceholder: {
-    width: 52,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 26,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(7, 7, 14, 0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100,
-  },
-  loadingCard: {
-    backgroundColor: '#111122',
-    borderColor: 'rgba(99, 102, 241, 0.2)',
-    borderWidth: 1,
-    padding: 30,
-    borderRadius: 24,
-    alignItems: 'center',
-    width: SCREEN_WIDTH * 0.8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 15,
-    elevation: 10,
-  },
-  loadingTextOverlay: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '700',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  loadingSubtitleOverlay: {
-    color: '#64748B',
-    fontSize: 12,
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  modalBackdrop: {
+  modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
-    padding: 24,
-  },
-  modalContainer: {
-    width: '100%',
-    backgroundColor: '#111122',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  modalHeader: {
-    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    gap: 8,
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#1E1E2E',
+    borderRadius: 16,
+    padding: 20,
   },
   modalTitle: {
     color: '#FFF',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  modalBody: {
-    padding: 20,
-    maxHeight: 300,
-  },
-  modalDesc: {
-    color: '#94A3B8',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  urlInputRow: {
+    fontSize: 18,
+    fontWeight: 'bold',
     marginBottom: 16,
   },
   inputLabel: {
-    color: '#A5B4FC',
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 6,
+    color: '#9CA3AF',
+    fontSize: 14,
+    marginBottom: 8,
   },
-  urlInput: {
-    backgroundColor: '#07070E',
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-    borderWidth: 1,
-    borderRadius: 10,
-    height: 44,
+  textInput: {
+    backgroundColor: '#0F0F1A',
     color: '#FFF',
     paddingHorizontal: 12,
-    fontSize: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#374151',
+    marginBottom: 20,
   },
-  statusLabel: {
-    color: '#64748B',
-    fontSize: 12,
-  },
-  statusLabelBold: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  modalFooter: {
+  modalButtonRow: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
     justifyContent: 'flex-end',
-    gap: 12,
   },
   modalButton: {
-    height: 40,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginLeft: 8,
   },
   cancelButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  cancelButtonText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '700',
+    backgroundColor: '#4B5563',
   },
   saveButton: {
-    backgroundColor: '#4F46E5',
+    backgroundColor: '#6366F1',
   },
-  saveButtonText: {
+  modalButtonText: {
     color: '#FFF',
-    fontSize: 13,
-    fontWeight: '700',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
 });
