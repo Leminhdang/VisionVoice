@@ -1,0 +1,4 @@
+[
+  { "id": 1, "file": "eval/images/001.jpg", "category": "duong-pho", "refs": ["<caption tham chiếu 1>", "<caption tham chiếu 2>"] },
+  { "id": 2, "file": "eval/images/002.jpg", "category": "cho-do-an", "refs": [] }
+]

@@ -1,0 +1,6 @@
+[
+  { "imageId": 1, "question": "Trong ảnh có người không?", "expected": "<đáp án đúng>", "category": "hien-dien" },
+  { "imageId": 1, "question": "Cái áo màu gì?", "expected": "<đáp án đúng>", "category": "mau-sac" },
+  { "imageId": 1, "question": "Có mấy cái ghế?", "expected": "<đáp án đúng>", "category": "dem" },
+  { "imageId": 2, "question": "Cái cốc ở bên trái hay bên phải máy tính?", "expected": "<đáp án đúng>", "category": "vi-tri" }
+]
