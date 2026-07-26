@@ -1,14 +1,12 @@
-# Âm thanh chụp ảnh (Shutter Sound)
+# Âm thanh VisionVoice
 
-File `shutter.mp3` cần được đặt trong thư mục này.
+4 file WAV 44.1kHz 16-bit mono, tổng hợp bằng script (không cần license):
 
-## Cách lấy file:
-1. Tải một file âm thanh chụp ảnh miễn phí từ:
-   - https://freesound.org/search/?q=camera+shutter
-   - https://mixkit.co/free-sound-effects/camera/
-2. Đặt tên file là `shutter.mp3`
-3. Copy vào thư mục `assets/sounds/`
+| File | Dùng cho |
+|---|---|
+| `shutter.wav` | Tiếng màn trập khi chụp ảnh |
+| `listen-start.wav` | Bắt đầu nghe (2 nốt đi lên) |
+| `listen-end.wav` | Kết thúc nghe (nốt đi xuống) |
+| `danger.wav` | Cảnh báo nguy hiểm (double-beep 880Hz) |
 
-## Không có file thì sao?
-App vẫn hoạt động bình thường – phần phát âm thanh được bọc trong try/catch
-và sẽ bỏ qua nếu không tìm thấy file (xem `playCameraSound` trong CameraScreen.tsx).
+Phát qua `expo-audio` trong `src/services/feedback.ts`. Muốn thay: giữ nguyên tên file, thời lượng ≤400ms.

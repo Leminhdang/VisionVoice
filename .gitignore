@@ -39,3 +39,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Firebase config (chứa API key — tải lại bằng firebase_get_sdk_config nếu mất)
+google-services.json
+GoogleService-Info.plist
+
+# eval outputs
+eval/results/

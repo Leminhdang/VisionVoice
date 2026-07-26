@@ -29,15 +29,32 @@
           "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
         }
       ],
-      "expo-av"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "VisionVoice cần truy cập thư viện ảnh để chọn ảnh cần mô tả."
+        }
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/app-check",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.visionvoice.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "VisionVoice cần truy cập camera để chụp ảnh và mô tả khung cảnh.",
         "NSMicrophoneUsageDescription": "VisionVoice cần micro để nhận lệnh giọng nói.",
         "NSSpeechRecognitionUsageDescription": "VisionVoice dùng nhận dạng giọng nói để nhận lệnh chụp ảnh.",
+        "NSPhotoLibraryUsageDescription": "VisionVoice cần truy cập thư viện ảnh để chọn ảnh cần mô tả.",
         "UIBackgroundModes": ["audio"]
       }
     },
@@ -49,6 +66,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.visionvoice.app",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
