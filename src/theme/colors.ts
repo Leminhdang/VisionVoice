@@ -1,0 +1,25 @@
+// Quy tắc: chữ <24pt chỉ dùng token text* / accentText / successText / dangerText / ink (đều ≥7:1);
+// accent/accentSoft/danger chỉ dành cho fill/border/icon/chữ display.
+export const colors = {
+  bg: '#07070E',
+  bgAlt: '#090911',
+  surface: '#111122',
+  surfaceAlt: '#131322',
+  line: 'rgba(255,255,255,0.10)',
+  textPrimary: '#FFFFFF',
+  textBody: '#E2E8F0',
+  textMuted: '#94A3B8',
+  accent: '#6366F1',
+  accentDeep: '#4F46E5',
+  accentSoft: '#818CF8',
+  accentText: '#A5B4FC',
+  success: '#10B981',
+  successText: '#34D399',
+  warning: '#EAB308',
+  danger: '#EF4444',
+  dangerFill: '#DC2626',
+  dangerText: '#FCA5A5',
+  ink: '#0A0A0F',
+  scrimTop: 'rgba(7,7,14,0.65)',
+  scrimBottom: 'rgba(7,7,14,0.82)',
+} as const;
