@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VisionVoice — Dev Docs</title>
+<style>
+body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 15px; line-height: 1.6; max-width: 900px; margin: 32px auto; padding: 0 24px; color: #1a1a2e; }
+h1 { font-size: 26px; border-bottom: 3px solid #6366F1; padding-bottom: 8px; }
+h2 { font-size: 21px; margin-top: 2.2em; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+h3 { font-size: 17px; margin-top: 1.6em; }
+table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: 14px; }
+th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: #eef; }
+pre { background: #f6f6fa; border: 1px solid #e2e2ee; border-radius: 6px; padding: 12px; overflow-x: auto; font-size: 13px; line-height: 1.45; }
+code { background: #f0f0f8; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+nav { background: #f6f6fa; border: 1px solid #e2e2ee; border-radius: 8px; padding: 16px 24px; }
+nav a { display: inline-block; margin-right: 16px; color: #4F46E5; text-decoration: none; }
+ul { padding-left: 22px; }
+@media (prefers-color-scheme: dark) {
+  body { background: #0f0f16; color: #d8dce6; }
+  th { background: #1c1c2e; } th, td { border-color: #333; }
+  pre, nav, code { background: #171722; border-color: #2a2a3a; }
+  h1 { border-color: #6366F1; } h2 { border-color: #333; }
+  nav a { color: #a5b4fc; }
+}
+</style>
+</head>
+<body>
+<h1>VisionVoice — Tài liệu kỹ thuật nội bộ</h1>
+<p>Bản đồ toàn bộ code v2 (branch <code>feature/rebuild-v2</code>) — đọc file này trước khi sửa bất cứ thứ gì. Cập nhật lần cuối: 26/07/2026.</p>
+<nav>
+<a href="#tong-quan">Tổng quan</a><a href="#kien-truc">Kiến trúc</a><a href="#luong-chinh">4 luồng chính</a><a href="#half-duplex">Half-duplex</a><a href="#services">Services</a><a href="#state">State</a><a href="#hooks">Hooks</a><a href="#components">Components</a><a href="#theme">Design tokens</a><a href="#strings">Strings &amp; intents</a><a href="#setup">Setup</a><a href="#firebase">Firebase</a><a href="#verify">Test</a><a href="#trouble">Troubleshooting</a><a href="#conventions">Quy ước</a>
+</nav>
+<h2 id="tong-quan">Tổng quan</h2>
+<p>VisionVoice là app camera voice-first tiếng Việt cho người khiếm thị, gồm đúng 3 chức năng:</p>
+<ul>
+  <li><strong>Mô tả ảnh</strong> — chụp (nút, giọng nói, phím âm lượng) hoặc chọn từ gallery → gửi Gemini → đọc caption bằng TTS.</li>
+  <li><strong>Hỏi đáp về ảnh</strong> — chat multi-turn với Gemini về ảnh vừa chụp, điều khiển hoàn toàn bằng giọng nói + push-to-talk.</li>
+  <li><strong>Dò vật cản</strong> — vòng lặp quét real-time bằng MLKit object detection <em>on-device</em>, cảnh báo theo mức độ (safe/warning/danger).</li>
+</ul>
+<p>Stack: Expo SDK 54 (new architecture, <code>expo-dev-client</code> — không chạy được trên Expo Go vì có native module Firebase + MLKit), React Native 0.81.5, React 19.1.0, TypeScript 5.9 strict, React Navigation native-stack (4 màn hình), Firebase AI Logic (<code>@react-native-firebase/ai</code>) gọi Gemini kèm App Check, jest-expo cho unit test (<code>src/services/__tests__</code>, <code>src/state/__tests__</code>). Không có Redux/Zustand — state duy nhất là <code>SettingsContext</code> + <code>useReducer</code> trong <code>captureMachine.ts</code>.</p>
+<table border="1">
+  <tr><th>Package</th><th>Version</th><th>Lý do pin</th></tr>
+  <tr><td><code>react-native</code> / <code>react</code></td><td>0.81.5 / 19.1.0 (exact)</td><td>Cặp version Expo SDK 54 yêu cầu — lệch là vỡ native build.</td></tr>
+  <tr><td><code>@react-native-firebase/app</code>, <code>app-check</code>, <code>ai</code></td><td>23.8.8 (exact)</td><td>3 gói RNFB bắt buộc cùng version. Kiểu <code>AIOptions.appCheck</code> (nhận <code>AppCheck | null</code>) được check theo đúng 23.8.8 — có comment trong <code>gemini.ts</code>.</td></tr>
+  <tr><td><code>@infinitered/react-native-mlkit-object-detection</code></td><td>5.0.0 (exact)</td><td>Native module; API hook (<code>useObjectDetectionModels</code>/<code>Provider</code>) đổi theo minor. Pin cứng để prebuild ổn định.</td></tr>
+  <tr><td><code>@react-native-async-storage/async-storage</code></td><td>2.2.0 (exact)</td><td>Bản Expo 54 expect (<code>npx expo install</code> chốt); dùng cho persist Settings.</td></tr>
+  <tr><td><code>expo-speech-recognition</code></td><td>^3.1.3</td><td>Community package, theo semver; cần config plugin trong <code>app.json</code>.</td></tr>
+  <tr><td><code>react-native-volume-manager</code></td><td>^2.0.8</td><td>Bắt phím âm lượng làm nút chụp/PTT.</td></tr>
+  <tr><td><code>expo-audio</code></td><td>~1.1.1</td><td>Thay <code>expo-av</code> (deprecated) — <code>feedback.ts</code> dùng <code>createAudioPlayer</code>.</td></tr>
+</table>
+
+<h2 id="kien-truc">Kiến trúc</h2>
+<pre>
+┌──────────────────────────── App.tsx ────────────────────────────┐
+│ initTts() · initFirebase() · SettingsProvider                   │
+│ useObjectDetectionModels ─→ ObjectDetectionProvider (MLKit)     │
+│ NavigationContainer ─→ RootNavigator (native-stack, no header)  │
+└─────────────────────────────────────────────────────────────────┘
+        │ src/screens/
+  HomeCamera ── QASession ── ObstacleMode ── Settings
+        │ src/hooks/
+  usePermissionBootstrap · useVoiceControl · useVolumeButtonPTT
+  useQASession · useObstacleScanner · useCaptureMachine (src/state/)
+        │ src/services/
+  ┌──────────────── audioSession.ts (half-duplex gate) ───────────┐
+  │  ASR: expo-speech-recognition   TTS: tts.ts (expo-speech)     │
+  └───────────────────────────────────────────────────────────────┘
+  imagePipeline.ts (capture/resize/base64)   feedback.ts (sound+haptic)
+  metrics.ts (log phiên)                     voiceIntents.ts (parse lệnh)
+        │                                          │
+        ▼ CLOUD                                    ▼ ON-DEVICE
+  gemini.ts ─→ Firebase AI Logic             obstacleDetector.ts
+  (gemini-3.6-flash,                         (pure logic, nhận kết quả
+   fallback gemini-3.1-flash-lite)            MLKit từ useObstacleScanner)
+</pre>
+<p><strong>Chỗ đứng của <code>audioSession.ts</code></strong>: đây là module DUY NHẤT được đụng cả ASR lẫn TTS (xem <a href="#half-duplex">bất biến half-duplex</a>). Màn hình muốn nói → <code>speakExclusive()</code>; muốn nghe → <code>startListening()</code>/<code>stopListening()</code>; Q&A đóng băng mic khi chờ Gemini bằng <code>setSuspended()</code>. Duy nhất <code>tts.stop()</code> được gọi thẳng từ ngoài (barge-in, cleanup).</p>
+
+<h2 id="luong-chinh">4 luồng chính</h2>
+
+<h3>1. Mô tả ảnh — từ trigger đến đọc xong + giữ result</h3>
+<ol>
+  <li>Trigger: nói "chụp ảnh" (<code>useVoiceControl</code> → <code>voiceIntents.ts:parseIntent</code>), phím âm lượng (<code>useVolumeButtonPTT</code>), nút shutter, hoặc gallery. 3 trigger đầu đi qua <code>HomeCameraScreen.tsx:captureFlow</code> → <code>useDebounceCallback</code> (leading-edge, <code>CAPTURE_DEBOUNCE_MS = 2000</code>).</li>
+  <li><code>runCaptureFlow</code>: <code>hapticCapture()</code> + <code>playShutter()</code>, <code>dispatch('CAPTURE_START')</code> — state machine <code>captureMachine.ts</code> đi idle → capturing (chỉ chụp được khi <code>canCapture</code>, tức idle).</li>
+  <li><code>imagePipeline.ts:captureAndPrepare</code>: <code>takePictureAsync({ quality: 0.4 })</code> → <code>prepareFromUri</code>: resize width 800, compress 0.5, JPEG + base64 → <code>PreparedImage</code>. Gallery đi thẳng <code>prepareFromUri(pickedUri)</code>.</li>
+  <li><code>analyzeAndSpeak</code>: <code>dispatch('ANALYZE_START')</code>, đọc <code>CAPTURE.ANALYZING</code> (không await), rồi <code>gemini.ts:describeImage(image, captureId)</code> — <code>generateContent([imagePart, DESCRIBE_PROMPT])</code>; quota/404 thì <code>describeWithFallback</code> thử lại bằng <code>GEMINI_FALLBACK_MODEL</code>.</li>
+  <li><code>dispatch('SPEAK_START')</code> → <code>await audioSession.speakExclusive(description)</code> → <code>dispatch('DONE')</code>.</li>
+  <li>Giữ result: <code>setLastImage</code>/<code>setLastDescription</code> → <code>hasResult = true</code> → render màn kết quả (<code>CaptionPanel</code> + 3 nút: hỏi về ảnh / chụp mới / đọc lại), đọc <code>CAPTURE.RESULT_HINT</code>. Ở màn kết quả, lệnh "chụp" chạy <code>handleNewCapture</code> (xoá result, quay về camera) chứ KHÔNG chụp ngay.</li>
+  <li>Lỗi: <code>GeminiError.kind</code> → <code>ERRORS[kind]</code> đọc lên, <code>dispatch('ERROR')</code> về idle. <code>gemini.ts</code> không bao giờ trả text lỗi giả làm caption.</li>
+</ol>
+
+<h3>2. Hỏi đáp multi-turn</h3>
+<ol>
+  <li><code>HomeCameraScreen:openQA</code> → <code>navigation.navigate('QASession', { image, caption })</code> — <code>PreparedImage</code> (đã có base64) đi qua route params.</li>
+  <li><code>QASessionScreen</code> hai tầng: tầng ngoài đọc <code>NAV.QA</code> XONG mới mount <code>QASessionActive</code> — vì <code>tts.speak</code> mặc định flush, mount sớm thì <code>QA.ASK_PROMPT</code> cắt ngang lời giới thiệu.</li>
+  <li><code>useQASession</code> mount: <code>gemini.ts:createQASession(image)</code> → <code>startChat()</code>; đọc <code>QA.ASK_PROMPT</code> → <code>beginListeningImpl</code> (âm báo <code>playListenStart</code> + <code>audioSession.startListening</code>).</li>
+  <li>Final transcript → <code>processTranscript</code>: <code>parseIntent</code> ra 'back'/'stop' → gọi <code>onExitIntent</code> (KHÔNG gửi Gemini); còn lại → <code>askQuestion</code>.</li>
+  <li><strong>Ảnh gửi đúng 1 lần</strong>: trong <code>createQASession</code>, lượt đầu (<code>isFirstTurn</code>) gửi <code>[imagePart, question]</code>, các lượt sau chỉ gửi text — <code>ChatSession</code> tự giữ context hội thoại.</li>
+  <li>Khi chờ Gemini: <code>audioSession.setSuspended(true)</code> (mic đóng băng). Có answer → <code>speakExclusive(answer)</code> → <code>setSuspended(false)</code> → <strong>auto-relisten</strong> sau <code>QA_RELISTEN_DELAY_MS = 800</code>.</li>
+  <li><strong>Barge-in PTT</strong>: đè vùng mic (<code>onPressIn</code>) hoặc bấm phím âm lượng → <code>interrupt()</code>: <code>tts.stop()</code> + <code>setSuspended(false)</code> + nghe lại NGAY — cắt ngang câu trả lời đang đọc. Guard <code>statusRef.current !== 'answering'</code> trong <code>askQuestion</code> ngăn schedule relisten đè lên phiên nghe do barge-in mở.</li>
+  <li>Thoát: <code>end()</code> → <code>dispose()</code> chat + <code>stopListening()</code>; blur/unmount cũng <code>end()</code> qua <code>useFocusEffect</code>.</li>
+</ol>
+
+<h3>3. Vòng lặp vật cản</h3>
+<ol>
+  <li><code>ObstacleModeScreen</code>: <code>useKeepAwake()</code>, đọc <code>NAV.OBSTACLE</code>; <code>useObstacleScanner(cameraRef, { active: isFocused })</code> — blur là vòng quét dừng hẳn.</li>
+  <li>Mỗi <code>cycle()</code>: <code>imagePipeline.ts:captureFrameForDetection</code> — <code>takePictureAsync({ quality: 0.2, skipProcessing: true, shutterSound: false })</code>.</li>
+  <li><code>detector.detectObjects(frame.uri)</code> — MLKit on-device, detector 'default' lấy từ <code>ObjectDetectionProvider</code> đã mount ở <code>App.tsx</code>.</li>
+  <li><code>obstacleDetector.ts:assessDetections(objects, frameSize, sensitivity)</code>: lọc score ≥ <code>OBSTACLE_SCORE_MIN</code> (0.35, labels rỗng tính score 1), tâm bbox phải nằm trong dải giữa <code>CENTER_BAND_WIDTH_RATIO[sensitivity]</code>; severity theo areaRatio: danger ≥ 0.35, warning ≥ 0.18.</li>
+  <li><code>createAnnouncementPolicy().shouldAnnounce(result, now)</code>: cooldown danger 2000ms / warning 3000ms (<code>ANNOUNCE_COOLDOWN_MS</code>), leo thang LÊN danger bỏ qua cooldown, safe chỉ đọc đúng lúc transition vào safe.</li>
+  <li><code>announceAssessment</code> (trong <code>useObstacleScanner.ts</code>): danger = <code>playDanger</code> + haptic + <code>speakExclusive(OBSTACLE.DANGER, { flush: true })</code>; warning kèm label tiếng Việt nếu map được qua <code>OBSTACLE.LABEL_VI</code>.</li>
+  <li><code>finally</code>: <code>deleteFrameFile(frameUri)</code> xoá file khung hình tạm (best-effort) + <code>scheduleNext</code> — chu kỳ kế tiếp delay <code>max(0, OBSTACLE_SCAN_INTERVAL_MS(900) − elapsed)</code>, không bao giờ chồng nhau. Frame lỗi chỉ warn, loop sống tiếp.</li>
+  <li>Cleanup bằng run-token (<code>Symbol</code>): cycle đang bay của lần kích hoạt cũ không thể resume tạo loop thứ hai.</li>
+</ol>
+
+<h3>4. Khởi động app</h3>
+<ol>
+  <li><code>App.tsx</code> useEffect: <code>tts.ts:initTts()</code> — đọc + theo dõi trạng thái screen reader (TalkBack/VoiceOver) qua <code>AccessibilityInfo</code>; singleton trọn đời, không teardown. Đang bật screen reader thì <code>speak()</code> route qua <code>announceForAccessibility</code> thay vì expo-speech.</li>
+  <li><code>firebase.ts:initFirebase()</code> — chỉ lo App Check: provider 'debug' khi <code>__DEV__</code>, 'playIntegrity' (Android) / 'appAttestWithDeviceCheckFallback' (iOS) khi prod. Fail thì warn và app vẫn boot; instance được <code>gemini.ts:getAiInstance</code> lấy qua <code>getAppCheckInstance()</code>.</li>
+  <li><code>DetectionRoot</code>: <code>useObjectDetectionModels({ loadDefaultModel: true, defaultModelOptions: DEFAULT_DETECTOR_OPTIONS })</code> → <code>useObjectDetectionProvider</code> bọc <code>NavigationContainer</code>. Chú ý: options phải là const module-level — object mới mỗi render sẽ làm model nạp lại liên tục (options nằm trong deps của lib).</li>
+  <li><code>RootNavigator</code>: <code>initialRouteName="HomeCamera"</code>, <code>headerShown: false</code>, <code>animation: 'none'</code>.</li>
+  <li><code>HomeCameraScreen</code> → <code>usePermissionBootstrap</code>: <strong>nói TRƯỚC khi xin quyền</strong> — <code>speak(PERMISSIONS.MIC_REQUEST)</code> → chờ <code>PERMISSION_PROMPT_DELAY_MS = 3000</code> (cho user kịp định vị dialog hệ thống) → <code>requestMicPermission()</code>; camera lặp lại tương tự (mic trước, camera sau). Từ chối KHÔNG block: <code>ready</code> vẫn true, app chạy degraded.</li>
+  <li><code>ready</code> → đọc <code>PERMISSIONS.WELCOME</code>, <code>checkVietnameseVoice()</code> cảnh báo nếu máy thiếu giọng vi; screen effect chạy <code>focusNow()</code> + <code>announceScreen(NAV.HOME)</code> + <code>speakExclusive(NAV.HOME)</code>.</li>
+</ol>
+
+<h2 id="half-duplex">Bất biến half-duplex</h2>
+<p><strong>Vì sao</strong>: ASR chạy continuous — nếu mic mở trong lúc TTS nói, mic nghe chính giọng TTS và transcript đó thành lệnh/câu hỏi mới (app tự nói chuyện với chính nó). Loa và mic phải luân phiên: half-duplex.</p>
+<ul>
+  <li><strong>Luật "chỉ <code>speakExclusive</code>"</strong>: <code>audioSession.ts</code> là module duy nhất đụng cả <code>ExpoSpeechRecognitionModule</code> lẫn <code>tts</code>. Trình tự trong <code>speakExclusive</code>: set <code>isSpeaking = true</code> → <code>hardStopRecognition()</code> (dùng <code>abort()</code>, không chờ final result) → <code>await tts.speak(text)</code> → <code>scheduleRestart(TTS_GUARD_DELAY_MS)</code>.</li>
+  <li><strong>Guard 400ms</strong> (<code>TTS_GUARD_DELAY_MS = 400</code>): sau khi TTS xong, đuôi âm thanh/echo vẫn còn lọt vào buffer ASR — mic chỉ mở lại sau 400ms, và <code>isSpeaking</code> chỉ hạ về false bên trong callback của <code>scheduleRestart</code>.</li>
+  <li><strong>Vứt transcript khi đang nói</strong>: <code>handleResult</code> return sớm khi <code>isSpeaking</code> — mọi result đến trong lúc nói hoặc trong guard window bị discard, không bao giờ chạm callback màn hình. Đây là chốt chặn thứ hai phòng khi <code>abort()</code> chưa kịp có hiệu lực.</li>
+  <li><strong><code>iosCategory</code> fix</strong>: <code>startRecognition</code> truyền <code>iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'] }</code> — mặc định iOS khi record sẽ chuyển output sang loa thoại (earpiece) làm TTS nhỏ gần như không nghe được; <code>defaultToSpeaker</code> giữ loa ngoài.</li>
+  <li><strong><code>setSuspended(true/false)</code></strong>: tầng nghỉ riêng cho Q&A khi chờ Gemini — giữ <code>wantListening</code> để resume được, resume cũng đi qua guard 400ms. Restart chỉ có MỘT slot (<code>scheduleRestart</code> luôn thay timer cũ), không bao giờ có hai timer đua nhau mở mic.</li>
+</ul>
+<table border="1">
+  <tr><th>Hằng số (<code>src/constants/config.ts</code>)</th><th>Giá trị</th><th>Vai trò</th></tr>
+  <tr><td><code>TTS_GUARD_DELAY_MS</code></td><td>400</td><td>Khoảng chờ sau TTS trước khi mở lại mic</td></tr>
+  <tr><td><code>ASR_RESTART_ON_END_MS</code></td><td>500</td><td>Restart khi ASR tự end (continuous bị hệ thống cắt)</td></tr>
+  <tr><td><code>ASR_RESTART_ON_ERROR_MS</code></td><td>2000</td><td>Backoff khi ASR lỗi (trừ 'aborted' tự gây)</td></tr>
+  <tr><td><code>QA_RELISTEN_DELAY_MS</code></td><td>800</td><td>Trễ auto-relisten sau khi đọc xong answer</td></tr>
+</table>
+<h2 id="services">Services</h2>
+<p>Logic không-UI nằm trong <code>src/services/</code>. Quy ước: module thuần (không import React), lỗi chứa tại chỗ (<code>console.warn</code> tiếng Việt) hoặc ném typed error.</p>
+
+<h3>gemini.ts — gọi Gemini qua Firebase AI Logic</h3>
+<table border=1>
+<tr><th>Export</th><th>Chữ ký</th><th>Hành vi</th></tr>
+<tr><td><code>GeminiError</code></td><td><code>class extends Error { kind: GeminiErrorKind }</code></td><td>UI map <code>kind</code> sang <code>ERRORS[kind]</code> trong <code>strings.ts</code></td></tr>
+<tr><td><code>describeImage</code></td><td><code>(image: PreparedImage, captureId?: number) =&gt; Promise&lt;string&gt;</code></td><td>Mô tả ảnh; fail thì ném <code>GeminiError</code>, không bao giờ trả text lỗi như caption</td></tr>
+<tr><td><code>createQASession</code></td><td><code>(image: PreparedImage) =&gt; QASession</code></td><td>Chat nhiều lượt: lượt đầu gửi kèm ảnh, sau chỉ gửi text; <code>dispose()</code> bỏ tham chiếu chat</td></tr>
+</table>
+<ul>
+<li><b>GeminiError kinds</b> — <code>mapErrorKind()</code> so substring trên message+code (lowercase):
+<table border=1>
+<tr><th>kind</th><th>Match</th></tr>
+<tr><td><code>network</code></td><td><code>network</code> / <code>fetch</code> / <code>timeout</code></td></tr>
+<tr><td><code>blocked</code></td><td><code>safety</code> / <code>blocked</code></td></tr>
+<tr><td><code>quota</code></td><td><code>429</code> / <code>quota</code> / <code>resource_exhausted</code></td></tr>
+<tr><td><code>unknown</code></td><td>còn lại (kể cả response rỗng)</td></tr>
+</table></li>
+<li><b>Fallback model</b>: thử <code>GEMINI_MODEL</code> (<code>gemini-3.6-flash</code>); nếu lỗi quota / "not found" / 404 thì retry 1 lần với <code>GEMINI_FALLBACK_MODEL</code> (<code>gemini-3.1-flash-lite</code>). Chỉ cho describe, không cho QA.</li>
+<li><b>MOCK_MODE</b>: trả <code>MOCK_DESCRIPTION</code> / <code>MOCK_QA_ANSWER</code> sau <code>MOCK_DELAY_MS</code> = 1500ms, vẫn log metric <code>mock: true</code> — dev không cần mạng/quota.</li>
+<li><b>Metrics theo captureId</b>: có truyền <code>captureId</code> thì mỗi call log <code>api_request</code> (kind <code>describe</code>|<code>qa</code>) và <code>api_response</code> (<code>ok</code>, <code>errorCode</code> = kind khi fail); không truyền → không log.</li>
+<li>AI instance + model cache module-level; system instruction chung <code>GEMINI_SYSTEM_INSTRUCTION</code>.</li>
+</ul>
+
+<h3>firebase.ts — chỉ lo App Check</h3>
+<table border=1>
+<tr><th>Export</th><th>Chữ ký</th><th>Hành vi</th></tr>
+<tr><td><code>initFirebase</code></td><td><code>() =&gt; Promise&lt;void&gt;</code></td><td>Kích hoạt App Check; idempotent; fail thì warn và app vẫn boot</td></tr>
+<tr><td><code>getAppCheckInstance</code></td><td><code>() =&gt; AppCheck | null</code></td><td>Trả instance cho <code>gemini.ts</code> truyền vào <code>getAI(..., { appCheck })</code></td></tr>
+</table>
+<ul>
+<li><b>Provider theo <code>__DEV__</code></b>: dev dùng <code>debug</code>; production Android <code>playIntegrity</code>, Apple <code>appAttestWithDeviceCheckFallback</code>.</li>
+<li><b>Debug token</b>: không hardcode — provider <code>debug</code> in token ra <b>native log</b> (adb logcat / Xcode console) lần chạy đầu; đăng ký tại Firebase console → App Check → Debug tokens.</li>
+</ul>
+
+<h3>audioSession.ts — điều phối half-duplex ASR/TTS</h3>
+<p>Module DUY NHẤT được đụng cả ASR (<code>expo-speech-recognition</code>) lẫn TTS. Khi TTS nói (và trong guard window sau đó) mọi transcript bị bỏ — app không nghe chính nó.</p>
+<table border=1>
+<tr><th>Export</th><th>Chữ ký</th><th>Hành vi</th></tr>
+<tr><td><code>startListening</code></td><td><code>(onTranscript: (text, isFinal) =&gt; void) =&gt; Promise&lt;void&gt;</code></td><td>Xin quyền + bật recognition liên tục; denied → return im lặng</td></tr>
+<tr><td><code>stopListening</code></td><td><code>() =&gt; void</code></td><td>Tắt hẳn, hủy restart đang chờ</td></tr>
+<tr><td><code>setSuspended</code></td><td><code>(value: boolean) =&gt; void</code></td><td>true: pause; false: resume sau guard delay</td></tr>
+<tr><td><code>speakExclusive</code></td><td><code>(text, opts?) =&gt; Promise&lt;void&gt;</code></td><td>Abort ASR → <code>tts.speak</code> → hẹn restart ASR sau guard</td></tr>
+</table>
+<ul>
+<li><b>State nội bộ</b> — 4 flag module-level: <code>wantListening</code> (ý định), <code>isListening</code> (thực tế), <code>isSuspended</code> (pause thủ công), <code>isSpeaking</code> (gate chặn transcript trong lúc TTS + guard window).</li>
+<li><b>Timer restart</b> — 1 slot duy nhất (<code>scheduleRestart</code> luôn thay slot cũ):
+<table border=1>
+<tr><th>Sự kiện</th><th>Delay</th><th>Hằng số</th></tr>
+<tr><td>ASR event <code>end</code></td><td>500ms</td><td><code>ASR_RESTART_ON_END_MS</code></td></tr>
+<tr><td>ASR event <code>error</code> (trừ <code>aborted</code> tự gây)</td><td>2000ms</td><td><code>ASR_RESTART_ON_ERROR_MS</code></td></tr>
+<tr><td>Sau TTS / resume suspend</td><td>400ms</td><td><code>TTS_GUARD_DELAY_MS</code></td></tr>
+</table>
+Chỉ restart khi <code>wantListening && !isSuspended && !isSpeaking</code>.</li>
+</ul>
+
+<h3>tts.ts — TTS singleton</h3>
+<table border=1>
+<tr><th>Export</th><th>Chữ ký</th><th>Hành vi</th></tr>
+<tr><td><code>initTts</code></td><td><code>() =&gt; void</code></td><td>Đọc + theo dõi trạng thái screen reader (gọi 1 lần từ <code>App.tsx</code>, không bao giờ unsubscribe)</td></tr>
+<tr><td><code>speak</code></td><td><code>(text, opts?: {rate, pitch, flush}) =&gt; Promise&lt;void&gt;</code></td><td>Đọc text; resolve khi xong; không bao giờ reject</td></tr>
+<tr><td><code>speakAlways</code></td><td><code>(text, opts?) =&gt; Promise&lt;void&gt;</code></td><td>Luôn dùng expo-speech kể cả khi screen reader bật — chỉ cho nút "nghe thử" trong Settings</td></tr>
+<tr><td><code>setTtsDefaults</code></td><td><code>({rate?, pitch?}) =&gt; void</code></td><td>Áp rate/pitch mặc định từ Settings</td></tr>
+<tr><td><code>stop</code></td><td><code>() =&gt; void</code></td><td><code>Speech.stop()</code></td></tr>
+<tr><td><code>isScreenReaderOn</code></td><td><code>() =&gt; boolean</code></td><td>Đọc flag hiện tại</td></tr>
+<tr><td><code>checkVietnameseVoice</code></td><td><code>() =&gt; Promise&lt;boolean&gt;</code></td><td>Có voice <code>vi*</code> không; API lỗi → trả true (không chặn app)</td></tr>
+</table>
+<ul>
+<li><b>Routing screen reader</b>: TalkBack/VoiceOver đang bật mà gọi expo-speech thì hai giọng nói đè nhau → <code>speak()</code> chuyển qua <code>AccessibilityInfo.announceForAccessibility</code>. API này không có callback hoàn thành nên Promise resolve theo ước lượng 80ms/ký tự, cap 15s.</li>
+<li><b>Vì sao bọc Promise</b>: <code>Speech.speak</code> chỉ có callback (<code>onDone/onStopped/onError</code>). Bọc thành Promise resolve ở cả 3 nhánh (không bao giờ reject) để <code>speakExclusive</code> <code>await</code> xong mới hẹn restart ASR. <code>flush</code> mặc định true — không xếp hàng utterance.</li>
+</ul>
+
+<h3>voiceIntents.ts — parse lệnh giọng nói</h3>
+<table border=1>
+<tr><th>Export</th><th>Chữ ký</th><th>Hành vi</th></tr>
+<tr><td><code>normalizeVietnamese</code></td><td><code>(s: string) =&gt; string</code></td><td>NFD → bỏ dấu → <code>đ→d</code> → lowercase → gộp whitespace</td></tr>
+<tr><td><code>parseIntent</code></td><td><code>(transcript: string) =&gt; VoiceIntent</code></td><td>Match keyword (từ <code>KEYWORDS</code> trong <code>strings.ts</code>) theo thứ tự ưu tiên, không match → <code>'unknown'</code></td></tr>
+</table>
+<ul>
+<li><b>Ưu tiên</b> (<code>INTENT_PRIORITY</code>): <code>stop</code> → <code>back</code> → <code>question</code> → <code>repeat</code> → <code>obstacle</code> → <code>settings</code> → <code>capture</code>. <code>capture</code> cuối vì "chụp" xuất hiện trong nhiều câu ("dừng chụp" phải ra <code>stop</code>).</li>
+<li><b>Word-boundary, không substring trần</b>: <code>containsKeyword</code> so <code>` ${transcript} `.includes(` ${keyword} `)</code>. Bug đã fix: "thời tiết" chuẩn hoá thành <code>"thoi tiet"</code> chứa substring <code>"hoi"</code> → <code>includes()</code> trần match nhầm <code>question</code>.</li>
+<li>Keyword normalize sẵn 1 lần vào <code>NORMALIZED_KEYWORDS</code> (Map) lúc load module.</li>
+</ul>
+
+<h3>obstacleDetector.ts — logic vật cản thuần</h3>
+<p>Pure logic (không React/Expo import). Type <code>DetectedObject</code> là structural alias của <code>@infinitered/react-native-mlkit-object-detection</code> (<code>size.x</code> = width, <code>size.y</code> = height).</p>
+<table border=1>
+<tr><th>Export</th><th>Chữ ký</th><th>Hành vi</th></tr>
+<tr><td><code>assessDetections</code></td><td><code>(objects, frame: FrameSize, sensitivity) =&gt; Assessment</code></td><td>Lọc + chấm mức độ 1 frame; trả <code>{severity, label, areaRatio}</code></td></tr>
+<tr><td><code>createAnnouncementPolicy</code></td><td><code>() =&gt; AnnouncementPolicy</code></td><td>Gate stateful (closure): <code>shouldAnnounce(assessment, now)</code></td></tr>
+</table>
+<ul>
+<li><b>Lọc</b>: object phải có score ≥ <code>OBSTACLE_SCORE_MIN</code> (0.35; <code>labels</code> rỗng = score 1, vẫn là vật cản) VÀ tâm-x bbox nằm trong dải trung tâm.</li>
+<li><b>Công thức</b>: <code>areaRatio = (size.x × size.y) / (frame.width × frame.height)</code>. Severity cao nhất thắng, hoà thì areaRatio lớn hơn thắng. <code>safe</code> luôn <code>label: null</code>.</li>
+<li><b>Ngưỡng</b>:
+<table border=1>
+<tr><th>areaRatio</th><th>Severity</th></tr>
+<tr><td>≥ 0.35 (<code>DANGER_AREA_RATIO</code>)</td><td><code>danger</code></td></tr>
+<tr><td>≥ 0.18 (<code>WARNING_AREA_RATIO</code>)</td><td><code>warning</code></td></tr>
+<tr><td>còn lại</td><td><code>safe</code></td></tr>
+</table></li>
+<li><b>Dải trung tâm theo sensitivity</b> (<code>CENTER_BAND_WIDTH_RATIO</code> × frame.width, canh giữa): <code>low</code> 0.25 · <code>medium</code> 0.4 · <code>high</code> 0.5. Nhạy hơn = dải rộng hơn = bắt nhiều object hơn.</li>
+<li><b>Policy cooldown</b> (<code>ANNOUNCE_COOLDOWN_MS</code>): <code>danger</code> 2000ms, <code>warning</code> 3000ms tính từ lần đọc severity đó. <b>Escalation lên danger</b> (severity trước ≠ danger) bỏ qua cooldown 1 lần; danger kéo dài thì theo cooldown 2s. <code>safe</code> chỉ đọc lúc chuyển vào safe rồi im. State chỉ cập nhật khi được phép đọc → transition bị chặn được retry ở frame sau.</li>
+</ul>
+
+<h3>imagePipeline.ts — chuẩn bị ảnh</h3>
+<table border=1>
+<tr><th>Export</th><th>Chữ ký</th><th>Hành vi</th></tr>
+<tr><td><code>selectPictureSize</code></td><td><code>(camera: CameraView) =&gt; Promise&lt;string | undefined&gt;</code></td><td>Chọn size 'WxH' có cạnh dài gần <code>TARGET_PICTURE_SIZE</code> (1280) nhất</td></tr>
+<tr><td><code>prepareFromUri</code></td><td><code>(uri: string) =&gt; Promise&lt;PreparedImage&gt;</code></td><td>Resize + nén + base64 (ảnh gallery hoặc vừa chụp)</td></tr>
+<tr><td><code>captureAndPrepare</code></td><td><code>(camera: CameraView) =&gt; Promise&lt;PreparedImage&gt;</code></td><td>Chụp rồi gọi <code>prepareFromUri</code></td></tr>
+<tr><td><code>captureFrameForDetection</code></td><td><code>(camera) =&gt; Promise&lt;{uri, width, height}&gt;</code></td><td>Chụp nhanh frame thấp cho ML Kit, không âm thanh</td></tr>
+<tr><td><code>deleteFrameFile</code></td><td><code>(uri: string) =&gt; Promise&lt;void&gt;</code></td><td>Xoá frame tạm — best-effort, nuốt lỗi</td></tr>
+</table>
+<p><b>Hai đường đi khác nhau</b>:</p>
+<table border=1>
+<tr><th></th><th>Describe (gửi Gemini)</th><th>Obstacle detection (ML Kit local)</th></tr>
+<tr><td>quality chụp</td><td><code>CAPTURE_QUALITY</code> = 0.4</td><td><code>DETECTION_FRAME_QUALITY</code> = 0.2</td></tr>
+<tr><td>xử lý</td><td>resize width 800 (<code>IMAGE_RESIZE_WIDTH</code>), compress 0.5 (<code>IMAGE_COMPRESS</code>), JPEG + base64</td><td><code>skipProcessing: true</code>, <code>shutterSound: false</code>, không resize</td></tr>
+<tr><td>dọn dẹp</td><td>—</td><td>caller phải gọi <code>deleteFrameFile</code> (frame ~1s/lần, không xoá là đầy disk)</td></tr>
+</table>
+
+<h3>feedback.ts — haptic + earcon</h3>
+<table border=1>
+<tr><th>Export</th><th>Haptic / hành vi</th></tr>
+<tr><td><code>hapticCapture()</code></td><td>Impact <code>Heavy</code> — lúc chụp</td></tr>
+<tr><td><code>hapticNavigate()</code></td><td>Impact <code>Medium</code> — chuyển màn/chế độ</td></tr>
+<tr><td><code>hapticStop()</code></td><td>Impact <code>Light</code> — lệnh dừng</td></tr>
+<tr><td><code>notifySuccess()</code> / <code>notifyError()</code> / <code>notifyWarning()</code></td><td>Notification <code>Success</code> / <code>Error</code> / <code>Warning</code></td></tr>
+<tr><td><code>hapticForSeverity(severity)</code></td><td><code>safe</code>: không rung · <code>warning</code>: notification Warning · <code>danger</code>: 2 phát Impact Heavy cách 150ms (<code>DANGER_HAPTIC_GAP_MS</code>)</td></tr>
+<tr><td><code>playShutter()</code> / <code>playListenStart()</code> / <code>playListenEnd()</code> / <code>playDanger()</code></td><td>4 earcon .wav trong <code>assets/sounds/</code>, phát bằng <code>expo-audio</code>, player cache theo tên, <code>seekTo(0)</code> trước mỗi lần phát</td></tr>
+</table>
+<p>Mọi haptic bọc <code>safeHaptic</code> — thiết bị không hỗ trợ thì bỏ qua im lặng.</p>
+
+<h3>metrics.ts — đo đạc phiên</h3>
+<p>Pure module, ring buffer in-memory 5000 event (<code>RING_BUFFER_CAP</code>), mỗi event đóng dấu <code>ts</code> rồi mirror ra console với prefix <code>VVMETRIC </code> (thu qua <code>adb logcat</code>). Tắt bằng <code>METRICS_ENABLED = false</code>.</p>
+<table border=1>
+<tr><th>MetricEvent</th><th>Fields</th></tr>
+<tr><td><code>session_start</code></td><td><code>note?</code></td></tr>
+<tr><td><code>capture_start</code></td><td><code>captureId</code>, <code>trigger: 'voice'|'volume'|'button'|'gallery'</code></td></tr>
+<tr><td><code>api_request</code></td><td><code>captureId</code>, <code>kind: 'describe'|'qa'</code></td></tr>
+<tr><td><code>api_response</code></td><td><code>captureId</code>, <code>ok</code>, <code>errorCode?</code>, <code>mock?</code></td></tr>
+<tr><td><code>tts_start</code></td><td><code>captureId</code>, <code>chars</code></td></tr>
+<tr><td><code>qa_question</code> / <code>qa_answer</code></td><td><code>captureId</code>, <code>transcript</code> / <code>answer</code></td></tr>
+<tr><td><code>obstacle_frame</code></td><td><code>frameId</code>, <code>detectMs</code>, <code>detections</code></td></tr>
+<tr><td><code>obstacle_alert</code></td><td><code>frameId</code>, <code>severity: 'warning'|'danger'</code>, <code>label: string|null</code></td></tr>
+<tr><td><code>app_error</code></td><td><code>where</code>, <code>message</code></td></tr>
+</table>
+<ul>
+<li>Exports khác: <code>logMetric(e)</code>, <code>nextCaptureId()</code> / <code>nextFrameId()</code> (counter tăng dần), <code>getSessionJson()</code>, <code>getQuickSummary()</code> (câu tiếng Việt để TTS đọc: số capture/câu hỏi/cảnh báo + latency describe trung bình), <code>clearSession()</code>.</li>
+<li><b>Export dữ liệu</b>: <code>SettingsScreen.tsx</code> gọi <code>Share.share({ message: getSessionJson() })</code> — metrics module không tự lo share.</li>
+</ul>
+
+<h2 id="state">State</h2>
+
+<h3>captureMachine.ts — state machine luồng chụp</h3>
+<p><code>AppPhase = 'idle' | 'capturing' | 'analyzing' | 'speaking'</code>. Hàm thuần <code>transition(phase, event)</code> làm reducer cho hook <code>useCaptureMachine()</code> (trả <code>{ phase, dispatch, canCapture, isProcessing }</code>). <code>ERROR</code>/<code>RESET</code> từ mọi phase về <code>idle</code>; event không hợp lệ → giữ nguyên phase.</p>
+<table border=1>
+<tr><th>phase \ event</th><th>CAPTURE_START</th><th>ANALYZE_START</th><th>SPEAK_START</th><th>DONE</th><th>ERROR</th><th>RESET</th></tr>
+<tr><td><code>idle</code></td><td><code>capturing</code></td><td>—</td><td>—</td><td>—</td><td><code>idle</code></td><td><code>idle</code></td></tr>
+<tr><td><code>capturing</code></td><td>—</td><td><code>analyzing</code></td><td>—</td><td>—</td><td><code>idle</code></td><td><code>idle</code></td></tr>
+<tr><td><code>analyzing</code></td><td>—</td><td>—</td><td><code>speaking</code></td><td>—</td><td><code>idle</code></td><td><code>idle</code></td></tr>
+<tr><td><code>speaking</code></td><td>—</td><td>—</td><td>—</td><td><code>idle</code></td><td><code>idle</code></td><td><code>idle</code></td></tr>
+</table>
+<p>("—" = giữ nguyên phase.) Helpers: <code>canCapture(phase)</code> = <code>phase === 'idle'</code>; <code>isProcessing(phase)</code> = <code>phase !== 'idle'</code> — dùng để chặn double-trigger từ voice/volume/button.</p>
+
+<h3>SettingsContext.tsx — cài đặt persist</h3>
+<table border=1>
+<tr><th>Export</th><th>Mô tả</th></tr>
+<tr><td><code>AppSettings</code></td><td><code>{ ttsRate: number; ttsPitch: number; obstacleSensitivity: 'low'|'medium'|'high' }</code></td></tr>
+<tr><td><code>SettingsProvider</code></td><td>Load từ AsyncStorage lúc mount, auto-save khi settings đổi</td></tr>
+<tr><td><code>useSettings()</code></td><td>Trả <code>{ settings, updateSettings(partial), isLoaded }</code>; throw nếu gọi ngoài Provider</td></tr>
+<tr><td><code>ObstacleSensitivity</code></td><td>Type dùng chung với <code>obstacleDetector.ts</code></td></tr>
+</table>
+<ul>
+<li><b>Key AsyncStorage</b>: <code>'visionvoice.settings'</code>. Defaults: rate 0.9 (<code>DEFAULT_TTS_RATE</code>), pitch 1.0 (<code>DEFAULT_TTS_PITCH</code>), sensitivity <code>'medium'</code>.</li>
+<li><b>Validate khi load</b>: <code>parseStoredSettings</code> không tin dữ liệu đã lưu — JSON.parse trong try/catch, check từng field (<code>isFiniteNumber</code>, <code>isObstacleSensitivity</code>), field hỏng rơi về default của field đó.</li>
+<li><b>Sync TTS</b>: <code>useEffect</code> gọi <code>setTtsDefaults({ rate, pitch })</code> mỗi khi settings đổi, nhưng chỉ ghi AsyncStorage khi <code>isLoaded === true</code> — tránh ghi đè settings đã lưu bằng defaults lúc mount.</li>
+<li><code>updateSettings</code> merge immutable: <code>setSettings(prev =&gt; ({ ...prev, ...partial }))</code>.</li>
+</ul>
+<h2 id="hooks">Hooks</h2>
+
+<p>7 hook trong <code>src/hooks/</code>. Quy ước chung: callback từ màn hình luôn giữ trong <code>ref</code> để listener/vòng lặp không resubscribe khi identity đổi.</p>
+
+<table border="1">
+  <tr><th>Hook</th><th>Chữ ký</th><th>Dùng ở</th><th>Hành vi cốt lõi</th><th>Bẫy cần nhớ</th></tr>
+  <tr>
+    <td><code>useVolumeButtonPTT</code></td>
+    <td><code>(onPress: () =&gt; void, opts?: {enabled?}) =&gt; void</code></td>
+    <td>Home, QA</td>
+    <td>Biến phím âm lượng thành nút chụp/PTT: ẩn volume UI native, mọi volume change gọi <code>onPress</code>, rồi snap volume về baseline lấy lúc mount.</td>
+    <td><code>onPress</code> giữ trong <code>onPressRef</code> — listener không bao giờ resubscribe. Throttle 500ms (<code>VOLUME_PRESS_THROTTLE_MS</code>) nuốt luôn event "echo" do chính <code>setVolume</code> phát ra. Cleanup hiện lại volume UI.</td>
+  </tr>
+  <tr>
+    <td><code>useObstacleScanner</code></td>
+    <td><code>(cameraRef: RefObject&lt;CameraView|null&gt;, opts: {active}) =&gt; {assessment}</code></td>
+    <td>Obstacle</td>
+    <td>Vòng quét tự lên lịch: chụp frame → ML Kit detect → <code>assessDetections</code> → publish <code>Assessment</code> + announce theo policy. Chu kỳ kế = <code>max(0, OBSTACLE_SCAN_INTERVAL_MS − elapsed)</code> (900ms), không bao giờ overlap.</td>
+    <td><code>runTokenRef</code> giữ <code>Symbol</code> per-run chống <b>zombie cycle</b>: cycle in-flight của activation cũ thấy token lệch là chết, không tạo được loop thứ hai. <code>sensitivityRef</code> nhận setting mới mà không restart loop (restart reset cooldown announce). Cần <code>ObjectDetectionProvider</code> mount ở <code>App.tsx</code>, thiếu là <code>useObjectDetection</code> throw.</td>
+  </tr>
+  <tr>
+    <td><code>useVoiceControl</code></td>
+    <td><code>(handlers: VoiceIntentHandlers, opts?: {enabled?}) =&gt; void</code></td>
+    <td>Home, Obstacle, Settings (<b>không</b> dùng ở QA)</td>
+    <td>ASR chạy liên tục khi màn hình focus; transcript FINAL qua <code>parseIntent</code> → gọi handler khớp + <code>hapticNavigate</code>.</td>
+    <td><b>Chỉ chạy khi focus</b> (<code>useFocusEffect</code>), blur/unmount là <code>stopListening()</code>. Handlers giữ trong ref — đổi identity không restart ASR. QA không dùng hook này vì <code>useQASession</code> đã chiếm audio session.</td>
+  </tr>
+  <tr>
+    <td><code>useQASession</code></td>
+    <td><code>(image: PreparedImage, opts?: {onExitIntent?, captureId?}) =&gt; {status, turns, beginListening, interrupt, end}</code></td>
+    <td>QA</td>
+    <td>Vòng hỏi–đáp trên 1 ảnh: mount → tạo Gemini session → đọc <code>QA.ASK_PROMPT</code> → listen; transcript FINAL thành câu hỏi, đọc trả lời, tự re-listen sau 800ms.</td>
+    <td>Intent <code>back</code>/<code>stop</code> <b>không bao giờ gửi Gemini</b> — gọi <code>onExitIntent</code> để màn hình tự thoát. <code>interrupt()</code> = barge-in bằng PTT. <code>end()</code> phải <code>setSuspended(false)</code> TRƯỚC <code>stopListening()</code>. Impl function chỉ close over ref + setter → <code>useCallback([])</code> an toàn.</td>
+  </tr>
+  <tr>
+    <td><code>usePermissionBootstrap</code></td>
+    <td><code>() =&gt; {ready, cameraGranted, micGranted}</code></td>
+    <td>Home</td>
+    <td>Xin quyền có lời dẫn: nói lý do → chờ 3s → hiện dialog hệ thống. Mic trước, camera sau. Cuối flow check giọng tiếng Việt.</td>
+    <td>One-shot latch <code>hasBootstrappedRef</code> — effect re-run giữa flow khi permission object đổi identity, nên cleanup timer đặt ở effect unmount-only riêng. Từ chối quyền <b>không block</b>: <code>ready</code> vẫn true, màn hình render degraded.</td>
+  </tr>
+  <tr>
+    <td><code>useAccessibilityFocus</code> + <code>announceScreen</code></td>
+    <td><code>&lt;T extends View&gt;() =&gt; {ref, focusNow}</code> · <code>announceScreen(text): void</code></td>
+    <td>Home, Settings (<code>announceScreen</code>: mọi màn)</td>
+    <td>Kéo focus VoiceOver/TalkBack tới view gắn <code>ref</code> khi gọi <code>focusNow()</code>; <code>announceScreen</code> phát announcement screen reader song song với TTS.</td>
+    <td><code>setAccessibilityFocus</code> chạy cả 2 platform trên RN 0.81 — không cần branch <code>Platform</code>.</td>
+  </tr>
+  <tr>
+    <td><code>useDebounceCallback</code></td>
+    <td><code>&lt;T extends (...args: unknown[]) =&gt; void&gt;(fn: T, delay = CAPTURE_DEBOUNCE_MS) =&gt; T</code></td>
+    <td>Home</td>
+    <td>Throttle leading-edge: lần gọi đầu chạy ngay, các lần trong <code>delay</code> (2000ms) bị bỏ.</td>
+    <td>Là throttle, không phải debounce — không có trailing call. Chắn các nguồn trigger chụp (voice/volume/tap) khỏi bắn liên tiếp.</td>
+  </tr>
+</table>
+
+<h2 id="components">Components</h2>
+
+<p>9 file trong <code>src/components/</code>, 10 component export (<code>SettingRow.tsx</code> chứa 2). Tất cả là dumb component — state do màn hình đưa xuống qua props.</p>
+
+<table border="1">
+  <tr><th>Component</th><th>Props</th><th>Dùng ở</th><th>Ghi chú a11y</th></tr>
+  <tr>
+    <td><code>BigActionButton</code></td>
+    <td><code>label, onPress, variant?('primary'|'secondary'|'danger'), compact?, disabled?, accessibilityLabel, accessibilityHint?</code></td>
+    <td>Cả 4 màn</td>
+    <td><code>accessibilityLabel</code> <b>bắt buộc</b>. Cao 88 (compact 64), full-width. Tự bắn <code>hapticNavigate()</code> trước <code>onPress</code>. <code>accessibilityState={{disabled}}</code>.</td>
+  </tr>
+  <tr>
+    <td><code>CameraViewport</code></td>
+    <td><code>forwardRef&lt;CameraView&gt;</code> · <code>onReady?</code></td>
+    <td>Home, Obstacle</td>
+    <td>Preview thuần, không a11y label. Camera ready → <code>selectPictureSize()</code> → mới bắn <code>onReady</code> (lỗi chọn size vẫn bắn).</td>
+  </tr>
+  <tr>
+    <td><code>CaptionPanel</code></td>
+    <td><code>imageUri, caption, isLoading</code></td>
+    <td>Home (trạng thái kết quả)</td>
+    <td>Caption có <code>accessibilityLiveRegion="polite"</code> — screen reader tự đọc khi đổi.</td>
+  </tr>
+  <tr>
+    <td><code>CornerControl</code></td>
+    <td><code>position('topLeft'|'topRight'|'bottomLeft'), iconName, label, hint?, onPress</code></td>
+    <td>Home (gallery / settings / obstacle)</td>
+    <td>72×72 + <code>hitSlop</code> 8. Icon-only nên <code>label</code>/<code>hint</code> gánh toàn bộ ngữ nghĩa.</td>
+  </tr>
+  <tr>
+    <td><code>StepperRow</code> <i>(SettingRow.tsx)</i></td>
+    <td><code>label, valueText, onIncrease, onDecrease, increaseLabel, decreaseLabel</code></td>
+    <td>Settings (tốc độ đọc, cao độ)</td>
+    <td>Nút +/− là target 64×64 với <code>accessibilityLabel</code> riêng (<code>SETTINGS.RATE_UP</code>…). Row cao tối thiểu 112.</td>
+  </tr>
+  <tr>
+    <td><code>SegmentedRow</code> <i>(SettingRow.tsx)</i></td>
+    <td><code>label, options: {key, label}[], selectedKey, onSelect</code></td>
+    <td>Settings (độ nhạy vật cản)</td>
+    <td>Mỗi segment là button riêng với <code>accessibilityState={{selected}}</code>.</td>
+  </tr>
+  <tr>
+    <td><code>SeverityBanner</code></td>
+    <td><code>severity('safe'|'warning'|'danger'), objectLabel?</code></td>
+    <td>Obstacle</td>
+    <td><code>pointerEvents="none"</code> — lớp visual cho người còn thị lực; kênh chính là audio/haptic từ <code>useObstacleScanner</code>. Chữ <code>hero</code> 64pt, fill toàn màn theo severity, fade 180ms.</td>
+  </tr>
+  <tr>
+    <td><code>ShutterButton</code></td>
+    <td><code>onPress, disabled?</code></td>
+    <td>Home</td>
+    <td>Vùng bấm full-width cao 148 (vòng tròn 104 chỉ là visual). Label <code>CAPTURE.SHUTTER_LABEL</code>.</td>
+  </tr>
+  <tr>
+    <td><code>StateIndicator</code></td>
+    <td><code>state('idle'|'listening'|'thinking'|'speaking')</code></td>
+    <td>Home, QA</td>
+    <td>Ring pulse (listening/speaking) hoặc spin (thinking); chữ trạng thái <code>accessibilityLiveRegion="polite"</code>. Idle mờ 0.4, không chữ.</td>
+  </tr>
+  <tr>
+    <td><code>TranscriptList</code></td>
+    <td><code>turns: ReadonlyArray&lt;{role: 'user'|'assistant', text}&gt;</code></td>
+    <td>QA</td>
+    <td>Mỗi turn là node <code>accessible</code> với label <code>QA.TURN_USER(text)</code> / <code>QA.TURN_ASSISTANT(text)</code>. Tự <code>scrollToEnd</code> khi content đổi.</td>
+  </tr>
+</table>
+
+<h2 id="theme">Design tokens</h2>
+
+<h3>Màu (<code>src/theme/colors.ts</code>)</h3>
+
+<table border="1">
+  <tr><th>Token</th><th>Giá trị</th><th>Vai trò</th></tr>
+  <tr><td><code>bg</code> / <code>bgAlt</code></td><td>#07070E / #090911</td><td>Nền màn hình</td></tr>
+  <tr><td><code>surface</code> / <code>surfaceAlt</code></td><td>#111122 / #131322</td><td>Card, nút secondary</td></tr>
+  <tr><td><code>line</code></td><td>rgba(255,255,255,0.10)</td><td>Border</td></tr>
+  <tr><td><code>textPrimary</code> / <code>textBody</code> / <code>textMuted</code></td><td>#FFFFFF / #E2E8F0 / #94A3B8</td><td>Chữ, cả 3 ≥7:1 trên nền tối</td></tr>
+  <tr><td><code>accent</code> / <code>accentDeep</code> / <code>accentSoft</code></td><td>#6366F1 / #4F46E5 / #818CF8</td><td>Fill/border/icon, <b>không</b> làm chữ nhỏ</td></tr>
+  <tr><td><code>accentText</code></td><td>#A5B4FC</td><td>Bản "chữ" của accent (≥7:1)</td></tr>
+  <tr><td><code>success</code> / <code>successText</code></td><td>#10B981 / #34D399</td><td>An toàn / đang nghe</td></tr>
+  <tr><td><code>warning</code></td><td>#EAB308</td><td>Fill banner cảnh báo (chữ đè dùng <code>ink</code>)</td></tr>
+  <tr><td><code>danger</code> / <code>dangerFill</code> / <code>dangerText</code></td><td>#EF4444 / #DC2626 / #FCA5A5</td><td>Nguy hiểm</td></tr>
+  <tr><td><code>ink</code></td><td>#0A0A0F</td><td>Chữ tối đè trên fill sáng</td></tr>
+  <tr><td><code>scrimTop</code> / <code>scrimBottom</code></td><td>rgba(7,7,14,0.65 / 0.82)</td><td>Overlay trên camera preview</td></tr>
+</table>
+
+<p><b>Quy tắc contrast</b> (ghi ngay đầu <code>colors.ts</code>): chữ &lt;24pt chỉ dùng nhóm ≥7:1 — <code>text*</code>, <code>accentText</code>, <code>successText</code>, <code>dangerText</code>, <code>ink</code>. Còn <code>accent</code>/<code>accentSoft</code>/<code>danger</code> chỉ cho fill/border/icon/chữ display cỡ lớn. App phục vụ người low-vision — đây là hard rule.</p>
+
+<h3>Thang chữ (<code>src/theme/typography.ts</code>)</h3>
+
+<table border="1">
+  <tr><th>Token</th><th>fontSize / lineHeight</th><th>Weight</th><th>Dùng cho</th></tr>
+  <tr><td><code>hero</code></td><td>64 / 76</td><td>900</td><td>Chữ banner vật cản</td></tr>
+  <tr><td><code>display</code></td><td>40 / 50</td><td>800</td><td>Chữ trạng thái, giá trị stepper</td></tr>
+  <tr><td><code>title</code></td><td>28 / 38</td><td>700</td><td>Tiêu đề màn, label setting</td></tr>
+  <tr><td><code>bodyLarge</code></td><td>22 / 34</td><td>500</td><td>Caption ảnh, transcript</td></tr>
+  <tr><td><code>label</code></td><td>20 / 26</td><td>700</td><td>Nhãn nút</td></tr>
+  <tr><td><code>body</code></td><td>18 / 28</td><td>500</td><td>Text phụ</td></tr>
+  <tr><td><code>caption</code></td><td>16 / 24</td><td>600</td><td>Chú thích nhỏ — sàn tuyệt đối fontSize 16</td></tr>
+</table>
+
+<p><b>Vì sao lineHeight ≥ 1.18×</b>: dấu tiếng Việt chồng tầng (ắ, ệ, ỡ) — lineHeight sát quá sẽ cắt cụt dấu. Quy tắc phụ: không viết hoa toàn bộ nhãn nút.</p>
+
+<h3>Touch target (<code>src/theme/spacing.ts</code>)</h3>
+
+<table border="1">
+  <tr><th>Hằng</th><th>Giá trị</th><th>Dùng cho</th></tr>
+  <tr><td><code>TARGET_PRIMARY</code></td><td>88</td><td>Nút hành động chính (BigActionButton full)</td></tr>
+  <tr><td><code>TARGET_SECONDARY</code></td><td>64</td><td>Nút compact, nút +/−, segment</td></tr>
+  <tr><td><code>TARGET_MIN</code></td><td>56</td><td>Sàn tuyệt đối cho mọi vùng chạm</td></tr>
+  <tr><td><code>SHUTTER_ZONE</code></td><td>148</td><td>Dải chụp full-width sát đáy màn</td></tr>
+  <tr><td><code>CORNER_CONTROL</code></td><td>72</td><td>Nút icon 4 góc</td></tr>
+</table>
+
+<p><b>Lý do "quét tay không nhắm"</b>: người dùng không nhìn màn hình nên không "nhắm" vào nút — họ quét ngón tay theo mép và góc để tìm bằng cảm giác. Target vì thế gấp rưỡi–gấp đôi chuẩn 44/48pt; vùng chụp 148pt chiếm nguyên dải đáy vì đáy màn hình là mốc vật lý dễ tìm nhất.</p>
+
+<h2 id="strings">strings.ts và intents</h2>
+
+<h3>Cấu trúc nhóm chuỗi</h3>
+
+<p><code>src/constants/strings.ts</code> gom <b>toàn bộ</b> chuỗi user-facing (100% tiếng Việt) — màn hình không hardcode chuỗi:</p>
+
+<ul>
+  <li><code>GEMINI_SYSTEM_INSTRUCTION</code>, <code>DESCRIBE_PROMPT</code> — prompt gửi Gemini.</li>
+  <li><code>KEYWORDS</code> — từ khoá voice intent (bảng dưới).</li>
+  <li><code>NAV</code> — lời dẫn khi vào mỗi màn, đọc bằng TTS + <code>announceScreen</code>.</li>
+  <li><code>STATE</code>, <code>CAPTURE</code>, <code>HOME</code>, <code>QA</code>, <code>OBSTACLE</code>, <code>SETTINGS</code>, <code>SCREEN_TITLES</code>, <code>PERMISSIONS</code> — chuỗi theo màn; vài entry là hàm template (<code>QA.TURN_USER(text)</code>, <code>OBSTACLE.WARNING_WITH_LABEL(label)</code>).</li>
+  <li><code>OBSTACLE.LABEL_VI</code> — map nhãn ML Kit Anh → Việt (person→người, chair→ghế…).</li>
+  <li><code>ERRORS</code> — key thường (<code>network</code>/<code>blocked</code>/<code>quota</code>/<code>unknown</code>) khớp đúng <code>GeminiError.kind</code> để tra <code>ERRORS[err.kind]</code>; key HOA (<code>NO_VI_VOICE</code>, <code>GALLERY</code>) là lỗi rời.</li>
+</ul>
+
+<h3>Intent → keyword</h3>
+
+<p>Parser ở <code>src/services/voiceIntents.ts</code>. Mọi so khớp chạy trên chuỗi đã qua <code>normalizeVietnamese()</code>: NFD bỏ dấu, <code>đ→d</code>, lowercase, gộp khoảng trắng. Match theo <b>ranh giới từ</b> (pad hai đầu bằng space rồi <code>includes</code>), không substring trần — "thời tiết" → "thoi tiet" chứa "hoi", includes trần sẽ match nhầm <code>question</code>.</p>
+
+<table border="1">
+  <tr><th>Ưu tiên</th><th>Intent</th><th>Keyword mẫu (có dấu + không dấu)</th></tr>
+  <tr><td>1</td><td><code>stop</code></td><td>dừng, dừng lại, dung lai, im lặng, im lang, tắt, tat</td></tr>
+  <tr><td>2</td><td><code>back</code></td><td>quay lại, quay lai, trở về, tro ve, thoát, thoat</td></tr>
+  <tr><td>3</td><td><code>question</code></td><td>hỏi, hoi, đặt câu hỏi, dat cau hoi</td></tr>
+  <tr><td>4</td><td><code>repeat</code></td><td>đọc lại, doc lai, nghe lại, nghe lai, nói lại, noi lai</td></tr>
+  <tr><td>5</td><td><code>obstacle</code></td><td>vật cản, vat can, dò vật cản, do vat can, dò đường, do duong, cảnh báo, canh bao</td></tr>
+  <tr><td>6</td><td><code>settings</code></td><td>cài đặt, cai dat, thiết lập, thiet lap</td></tr>
+  <tr><td>7</td><td><code>capture</code></td><td>chụp, chụp ảnh, chup, chup anh</td></tr>
+  <tr><td>—</td><td><code>unknown</code></td><td>không match gì → bị bỏ qua (không handler)</td></tr>
+</table>
+
+<p><b>Thứ tự ưu tiên</b> = mảng <code>INTENT_PRIORITY</code>, duyệt tuần tự, match đầu tiên thắng. <code>capture</code> đứng <b>cuối</b> có chủ đích: "chụp" xuất hiện trong nhiều câu — "dừng chụp" phải ra <code>stop</code>. <code>stop</code>/<code>back</code> đứng đầu vì lệnh thoát/dừng phải thắng mọi thứ.</p>
+
+<h3>Quy tắc thêm keyword mới</h3>
+
+<ul>
+  <li><b>Bắt buộc thêm cả bản không dấu</b> ("chụp ảnh" + "chup anh") — ASR trả về cả hai biến thể tuỳ thiết bị. <code>normalizeVietnamese</code> đã bỏ dấu nên hai bản trùng nhau sau chuẩn hoá, nhưng convention repo là khai báo đủ để đọc <code>KEYWORDS</code> thấy ngay app hiểu gì.</li>
+  <li>Chỉ sửa <code>KEYWORDS</code> trong <code>strings.ts</code> — <code>NORMALIZED_KEYWORDS</code> tự build lúc load module.</li>
+  <li>Keyword 1 từ ngắn/dễ trùng (kiểu "hoi") phải thử với các câu thường gặp trước khi thêm.</li>
+  <li>Thêm intent <b>mới</b>: thêm key vào <code>KEYWORDS</code>, thêm literal vào union <code>VoiceIntent</code>, chèn đúng vị trí trong <code>INTENT_PRIORITY</code> — mặc định trước <code>capture</code>.</li>
+</ul>
+<h2 id="setup">Setup từ clone</h2>
+
+<p>Repo dùng <strong>Expo dev client</strong> (native module: RNFB, ML Kit, expo-speech-recognition) — <strong>Expo Go không chạy được</strong>. Bắt buộc build native ít nhất một lần. Branch làm việc: <code>feature/rebuild-v2</code>.</p>
+
+<ol>
+  <li><code>yarn install</code> — <code>node_modules/</code> không được commit.</li>
+  <li>Đặt <strong>2 file config Firebase vào repo root</strong>: <code>google-services.json</code> (Android) và <code>GoogleService-Info.plist</code> (iOS). Cả hai đều <strong>gitignored</strong> (chứa API key — xem <code>.gitignore</code>). Nếu mất, tải lại bằng Firebase MCP tool <code>firebase_get_sdk_config</code> trên project <code>visionvoice-app-2026</code> (hoặc Firebase console → Project settings → tải file config của từng app). <code>app.json</code> đã trỏ sẵn qua <code>googleServicesFile</code>.</li>
+  <li><code>npx expo prebuild --clean</code> — sinh lại <code>/android</code> và <code>/ios</code> (cả hai gitignored). Bước này copy file Firebase config vào native project và apply plugin (<code>expo-camera</code>, <code>expo-speech-recognition</code>, <code>@react-native-firebase/app</code>, <code>@react-native-firebase/app-check</code>, <code>expo-build-properties</code>).</li>
+  <li><code>yarn android</code> hoặc <code>yarn ios</code> (= <code>expo run:*</code>) — build và cài dev client lên máy thật. Test trên máy thật vì cần camera + mic.</li>
+  <li><strong>Đăng ký App Check debug token</strong> (bước hay quên nhất):
+    <ul>
+      <li>Ở build <code>__DEV__</code>, <code>initFirebase()</code> trong <code>src/services/firebase.ts</code> cấu hình provider <code>'debug'</code>. Token <strong>không hardcode trong code</strong> — lần chạy đầu, native SDK tự sinh và <strong>in token ra native log</strong>: Android xem bằng <code>adb logcat</code> (lọc <code>appcheck</code> hoặc <code>DebugAppCheckProvider</code>), iOS xem trong Xcode console.</li>
+      <li>Copy token, vào Firebase console → <strong>App Check → Apps → chọn app → Manage debug tokens → Add debug token</strong>, dán vào.</li>
+      <li><strong>Mỗi máy/emulator một token riêng</strong> — đổi máy là phải đăng ký lại.</li>
+      <li>Chưa đăng ký = mọi call Gemini bị <strong>403</strong> (App Check auto-enforced trên project này).</li>
+    </ul>
+  </li>
+</ol>
+
+<h2 id="firebase">Firebase</h2>
+
+<table border="1">
+  <tr><th>Hạng mục</th><th>Giá trị</th></tr>
+  <tr><td>Project ID</td><td><code>visionvoice-app-2026</code> (tạo qua Firebase MCP)</td></tr>
+  <tr><td>Apps</td><td>2 app cùng id <code>com.visionvoice.app</code>: 1 Android + 1 iOS</td></tr>
+  <tr><td>SHA debug (Android)</td><td>SHA-1 của debug keystore đã đăng ký qua MCP — cần cho Play Integrity sau này</td></tr>
+  <tr><td>AI backend</td><td>Firebase AI Logic, <code>GoogleAIBackend</code> (Gemini Developer API) — chạy được trên gói <strong>Spark miễn phí</strong>, không cần Blaze</td></tr>
+  <tr><td>Model chính</td><td><code>GEMINI_MODEL = 'gemini-3.6-flash'</code> (<code>src/constants/config.ts</code>)</td></tr>
+  <tr><td>Model fallback</td><td><code>GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite'</code> — <code>describeWithFallback()</code> trong <code>gemini.ts</code> tự retry khi lỗi quota/429 hoặc model 404</td></tr>
+  <tr><td>App Check provider</td><td><code>__DEV__</code>: <code>debug</code> · release: <code>playIntegrity</code> (Android) / <code>appAttestWithDeviceCheckFallback</code> (iOS) — xem <code>firebase.ts</code></td></tr>
+  <tr><td>SDK</td><td><code>@react-native-firebase/{app, ai, app-check}</code> pin <code>23.8.8</code></td></tr>
+</table>
+
+<p>Việc <strong>phải làm bằng tay trên console</strong> (MCP/code không tự làm được):</p>
+<ul>
+  <li>Bật <strong>AI Logic</strong> cho project (Build → AI Logic → Get started, chọn Gemini Developer API).</li>
+  <li>Đăng ký <strong>App Check</strong> cho cả 2 app (chọn provider tương ứng) và thêm debug token cho từng máy dev.</li>
+</ul>
+
+<p>Luồng code phía client: <code>App.tsx</code> gọi <code>initFirebase()</code> một lần khi boot (idempotent, fail thì chỉ <code>console.warn</code>, app vẫn chạy) → <code>gemini.ts</code> lấy instance qua <code>getAppCheckInstance()</code> và truyền vào <code>getAI(getApp(), { backend: new GoogleAIBackend(), appCheck })</code>.</p>
+
+<h2 id="verify">Kiểm tra &amp; test</h2>
+
+<ul>
+  <li><code>yarn typecheck</code> — <code>tsc --noEmit</code>, TS strict. Phải sạch trước khi commit.</li>
+  <li><code>yarn test</code> — jest với preset <code>jest-expo</code>. Hiện tại: <strong>3 suite / 39 test, đều pass</strong> (đã chạy xác nhận):
+    <ul>
+      <li><code>src/services/__tests__/obstacleDetector.test.ts</code></li>
+      <li><code>src/services/__tests__/voiceIntents.test.ts</code></li>
+      <li><code>src/state/__tests__/captureMachine.test.ts</code></li>
+    </ul>
+    Cả 3 đều test logic thuần (không đụng native module) nên chạy nhanh, không cần mock camera/Firebase.</li>
+  <li><strong>Dev UI không cần Firebase/máy thật</strong>: đặt <code>MOCK_MODE = true</code> trong <code>src/constants/config.ts</code>. <code>describeImage()</code> và <code>createQASession()</code> sẽ trả <code>MOCK_DESCRIPTION</code> / <code>MOCK_QA_ANSWER</code> sau <code>MOCK_DELAY_MS</code> (1500ms) — không gọi mạng, không cần debug token. <strong>Nhớ trả về <code>false</code> trước khi commit.</strong></li>
+  <li>Đo đạc runtime: mọi event quan trọng được log <code>console.log('VVMETRIC ' + JSON.stringify(...))</code> từ <code>src/services/metrics.ts</code> — thu bằng <code>adb logcat | grep VVMETRIC</code>.</li>
+</ul>
+
+<h2 id="trouble">Troubleshooting</h2>
+
+<table border="1">
+  <tr><th>Triệu chứng</th><th>Nguyên nhân</th><th>Xử lý</th></tr>
+  <tr>
+    <td>Gemini trả 403 / <code>GeminiError</code> liên tục</td>
+    <td>App Check debug token của máy này chưa đăng ký</td>
+    <td>Lấy token từ <code>adb logcat</code> / Xcode console, đăng ký ở console → App Check → Debug tokens (xem <a href="#setup">Setup</a> bước 5)</td>
+  </tr>
+  <tr>
+    <td>TTS nhỏ tiếng / bị nghẹt trên iOS</td>
+    <td>Speech recognition mặc định đặt audio session sang mode <code>measurement</code>, làm output ra loa nhỏ hẳn</td>
+    <td>Đã né sẵn: <code>startRecognition()</code> trong <code>audioSession.ts</code> truyền <code>iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'default' }</code>. <strong>Đừng xoá option này.</strong></td>
+  </tr>
+  <tr>
+    <td>App tự kích hoạt lệnh bằng chính giọng TTS của nó</td>
+    <td>Mic mở trong lúc loa nói</td>
+    <td>Half-duplex là bất biến của hệ thống: chỉ nói qua <code>speakExclusive()</code> (<code>audioSession.ts</code>) — nó abort ASR trước khi nói, bỏ mọi transcript khi <code>isSpeaking</code>, và chỉ mở lại mic sau <code>TTS_GUARD_DELAY_MS</code> (400ms)</td>
+  </tr>
+  <tr>
+    <td>Build iOS fail ở bước pod install</td>
+    <td>RNFB đòi static frameworks; RNFB ≥ 25 còn đòi Xcode 26.2</td>
+    <td>Giữ nguyên <code>expo-build-properties</code> với <code>ios.useFrameworks: "static"</code> trong <code>app.json</code> và pin <code>@react-native-firebase/*@23.8.8</code>. Fail lạ thì <code>npx expo prebuild --clean</code> rồi build lại</td>
+  </tr>
+  <tr>
+    <td>Quét app bằng Expo Go → crash/không load</td>
+    <td>Native module (RNFB, ML Kit) không có trong Expo Go</td>
+    <td>Dùng dev client: <code>yarn android</code> / <code>yarn ios</code>, sau đó <code>yarn start</code> chỉ để reload JS</td>
+  </tr>
+  <tr>
+    <td>Vào Obstacle mode nhưng scanner đứng im, không quét</td>
+    <td>Model ML Kit default chưa load xong — <code>useObjectDetection('default')</code> trả <code>undefined</code>, effect trong <code>useObstacleScanner.ts</code> return sớm</td>
+    <td>Bình thường: chờ vài giây, effect tự chạy lại khi <code>detector</code> có giá trị. Nếu mãi không load, kiểm tra <code>ObjectDetectionProvider</code> trong <code>App.tsx</code> còn bọc ngoài navigator không</td>
+  </tr>
+  <tr>
+    <td>Cache đầy dần khi chạy obstacle mode lâu</td>
+    <td>Mỗi chu kỳ quét (~900ms) chụp 1 frame JPEG ra cache</td>
+    <td>Đã xử lý: <code>finally</code> của mỗi cycle gọi <code>deleteFrameFile(uri)</code> (<code>imagePipeline.ts</code>, best-effort). Nếu sửa vòng quét, giữ nguyên lời gọi này</td>
+  </tr>
+</table>
+
+<h2 id="conventions">Quy ước sửa code</h2>
+
+<ul>
+  <li><strong>Mọi chuỗi user-facing (tiếng Việt) vào <code>src/constants/strings.ts</code></strong> — không hardcode chuỗi trong screen/hook. Identifier code giữ tiếng Anh.</li>
+  <li><strong>Mọi số tinh chỉnh được vào <code>src/constants/config.ts</code></strong> (timeout, threshold, quality, delay) dạng <code>UPPER_SNAKE_CASE</code> — không magic number trong component.</li>
+  <li><strong>Màu chỉ dùng token từ <code>src/theme/colors.ts</code></strong>, không hex inline. Chữ nhỏ (&lt;24pt) chỉ dùng nhóm <code>text*</code> / <code>accentText</code> / <code>successText</code> / <code>dangerText</code> / <code>ink</code> (contrast ≥7:1).</li>
+  <li><strong><code>speakExclusive()</code> là lối nói duy nhất.</strong> Không gọi thẳng <code>Speech.speak</code> hay <code>tts.speak</code> từ screen — phá half-duplex là app nghe chính nó.</li>
+  <li><strong>Không bump <code>@react-native-firebase/*</code> (pin 23.8.8) và <code>jest</code> (pin ~29.7.0).</strong> RNFB 25 đòi Xcode 26.2; jest-expo 54 chưa hỗ trợ jest 30.</li>
+  <li><strong>Giữ nguyên các <code>console.log('VVMETRIC ...')</code></strong> trong <code>metrics.ts</code> — đây là đường thu số liệu cho báo cáo, không phải debug log để dọn.</li>
+  <li><strong>Thêm native module = prebuild lại</strong>: cập nhật <code>plugins</code>/<code>infoPlist</code>/<code>permissions</code> trong <code>app.json</code>, rồi <code>npx expo prebuild --clean</code> + build lại app — reload Metro không đủ.</li>
+</ul>
+</body></html>
