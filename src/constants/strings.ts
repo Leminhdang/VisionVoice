@@ -47,7 +47,14 @@ export const NAV = {
     "Nói 'quay lại' để thoát.",
 };
 
+export const STATE = {
+  LISTENING: 'Đang nghe',
+  THINKING: 'Đang xử lý',
+  SPEAKING: 'Đang đọc',
+};
+
 export const CAPTURE = {
+  SHUTTER_LABEL: 'Chụp ảnh',
   ANALYZING: 'Đã chụp. Đang phân tích, vui lòng chờ.',
   RESULT_HINT:
     "Nói 'hỏi' để đặt câu hỏi, 'chụp tiếp' để chụp ảnh mới, hoặc 'đọc lại' để nghe lại.",
@@ -55,10 +62,30 @@ export const CAPTURE = {
   NO_IMAGE_YET: 'Chưa có ảnh nào. Hãy chụp ảnh trước.',
 };
 
+export const HOME = {
+  BOOTING: 'Đang khởi động VisionVoice...',
+  GALLERY_LABEL: 'Chọn ảnh từ thư viện',
+  GALLERY_HINT: 'Mở thư viện ảnh để chọn một ảnh cần mô tả.',
+  SETTINGS_HINT: 'Mở màn hình cài đặt.',
+  OBSTACLE_HINT: 'Bật chế độ dò vật cản.',
+  ASK_ABOUT_IMAGE: 'Hỏi về ảnh này',
+  ASK_HINT: 'Mở màn hình hỏi đáp về ảnh vừa chụp.',
+  NEW_CAPTURE: 'Chụp ảnh mới',
+  READ_AGAIN: 'Đọc lại mô tả',
+};
+
 export const QA = {
   ASK_PROMPT: 'Bạn muốn hỏi gì về bức ảnh?',
   NOT_HEARD: 'Tôi chưa nghe rõ. Vui lòng hỏi lại sau tiếng bíp.',
   EXIT: 'Đã quay lại màn hình máy ảnh.',
+  BACK: 'Quay lại',
+  BACK_HINT: 'Kết thúc hỏi đáp và quay về màn hình máy ảnh.',
+  IMAGE_LABEL: 'Ảnh đang được hỏi đáp',
+  HOLD_TO_ASK: 'Giữ để đặt câu hỏi',
+  HOLD_HINT: 'Giữ trong khi nói, thả ra khi nói xong',
+  MIC_CAPTION: 'Giữ để nói, hoặc bấm phím âm lượng',
+  TURN_USER: (text: string) => `Bạn hỏi: ${text}`,
+  TURN_ASSISTANT: (text: string) => `Trả lời: ${text}`,
 };
 
 const OBSTACLE_LABEL_VI: Record<string, string> = {
@@ -86,11 +113,16 @@ const OBSTACLE_LABEL_VI: Record<string, string> = {
 };
 
 export const OBSTACLE = {
+  BANNER_SAFE: 'AN TOÀN',
+  BANNER_WARNING: 'VẬT CẢN',
+  BANNER_DANGER: 'NGUY HIỂM',
   SAFE: 'Đường trống.',
   WARNING: 'Vật cản phía trước.',
   WARNING_WITH_LABEL: (label: string) => `Vật cản phía trước: ${label}.`,
   DANGER: 'Dừng lại! Vật cản rất gần.',
   EXIT: 'Đã tắt chế độ dò vật cản.',
+  STOP_BUTTON: 'Dừng dò vật cản',
+  STOP_HINT: 'Dừng quét vật cản và quay về màn hình máy ảnh.',
   LABEL_VI: OBSTACLE_LABEL_VI,
 };
 
@@ -120,6 +152,24 @@ export const SETTINGS = {
   ABOUT:
     'VisionVoice — mô tả ảnh và hỏi đáp bằng Gemini qua Firebase AI Logic, ' +
     'cảnh báo vật cản bằng ML Kit trên thiết bị.',
+  EXIT: 'Đã đóng cài đặt.',
+  SAMPLE_RATE: 'Đây là tốc độ đọc mới.',
+  SAMPLE_PITCH: 'Đây là cao độ giọng mới.',
+  CLEARED: 'Đã xoá nhật ký đánh giá.',
+  RATE_UP: 'Tăng tốc độ đọc',
+  RATE_DOWN: 'Giảm tốc độ đọc',
+  PITCH_UP: 'Tăng cao độ giọng',
+  PITCH_DOWN: 'Giảm cao độ giọng',
+  BACK_HINT: 'Đóng cài đặt và quay về màn hình máy ảnh.',
+  EXPORT_HINT: 'Mở bảng chia sẻ để gửi tệp nhật ký đánh giá.',
+  CLEAR_HINT: 'Xoá toàn bộ nhật ký đánh giá đã ghi.',
+};
+
+export const SCREEN_TITLES = {
+  HOME: 'Máy ảnh',
+  QA: 'Hỏi đáp về ảnh',
+  OBSTACLE: 'Dò vật cản',
+  SETTINGS: 'Cài đặt',
 };
 
 export const PERMISSIONS = {
