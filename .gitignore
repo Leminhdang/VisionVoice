@@ -43,6 +43,8 @@ yarn-error.*
 # Firebase config (chứa API key — tải lại bằng firebase_get_sdk_config nếu mất)
 google-services.json
 GoogleService-Info.plist
+firebase.json
+.firebaserc
 
 # eval outputs
 eval/results/
