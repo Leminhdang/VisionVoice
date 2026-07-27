@@ -1,134 +1,179 @@
-# HƯỚNG DẪN DEMO ỨNG DỤNG VISIONVOICE VỚI GRIT MODEL (COLAB BACKEND)
+# VisionVoice
 
-Chào bạn! Dưới đây là hướng dẫn chi tiết cách vận hành và demo luồng thực tế của ứng dụng di động **VisionVoice** kết hợp với mô hình **GRIT** đã fine-tune trên tập dữ liệu tiếng Việt **KTVIC**, chạy trực tiếp qua máy chủ Google Colab.
+> Ứng dụng hỗ trợ người khiếm thị bằng giọng nói — mô tả ảnh, hỏi đáp và cảnh báo vật cản.
 
----
+VisionVoice là ứng dụng di động tiếng Việt dành cho người mù và nhược thị, sử dụng AI để mô tả khung cảnh qua camera và cảnh báo vật cản theo thời gian thực. Đây là bản rebuild v2 cho đồ án tốt nghiệp.
 
-## 🚀 Các cải tiến đã triển khai trong Source Code
+## Tính năng
 
-Chúng tôi đã nâng cấp toàn bộ hệ thống kết nối API và giao diện hiển thị của mobile app để đảm bảo buổi demo diễn ra **mượt mà, chuyên nghiệp và có tính thuyết phục cao nhất**:
+### 📸 Mô tả ảnh
+Chụp ảnh bằng giọng nói ("chụp ảnh"), nút volume, nút chụp trên màn hình hoặc chọn từ thư viện → ảnh được resize và gửi lên Gemini qua Firebase AI Logic → mô tả được đọc lại bằng TTS.
 
-### 1. Nâng cấp API Client (`src/services/api.ts`)
+### 💬 Hỏi đáp giọng nói
+Sau khi có mô tả, người dùng có thể hỏi thêm về ảnh (VD: "trong ảnh có mấy người?", "cái áo màu gì?"). Phiên chat nhiều lượt — ảnh chỉ gửi lần đầu. Nói "quay lại" hoặc "dừng" để thoát.
 
-- **Hỗ trợ Endpoint `/caption`**: Tự động gọi API `/caption` theo kế hoạch demo. Nếu máy chủ chưa cập nhật và báo lỗi `404`, hệ thống sẽ tự động chuyển hướng dự phòng (fallback) sang `/api/analyze` để không làm gián đoạn demo.
-- **Tự động nhận diện cả 2 Key**: Xử lý mượt mà cả cấu trúc JSON mới trả về của Colab (`{"caption": "..."}`) và cấu trúc cũ (`{"description": "..."}`).
-- **Hỗ trợ cập nhật URL động**: Cung cấp hàm `updateApiBaseUrl` để cập nhật địa chỉ IP/Ngrok của máy chủ Axios ngay khi đang chạy ứng dụng.
+### ⚠️ Cảnh báo vật cản
+Vòng lặp chụp ảnh nhanh (~0.9s) → ML Kit Object Detection on-device → đánh giá mức độ (an toàn / cảnh báo / nguy hiểm) → thông báo bằng giọng nói + rung + màu toàn màn hình.
 
-### 2. Giao diện Demo Đa phương thức (`src/screens/CameraScreen.tsx`)
-
-- **Chọn ảnh từ Thư viện (Gallery)**: Bổ sung nút mở thư viện ảnh (`expo-image-picker`) tinh tế bên cạnh nút chụp, đáp ứng mục tiêu cho phép người dùng chọn ảnh có sẵn để test.
-- **Màn hình hiển thị kết quả cực kỳ cao cấp (Premium Glassmorphism)**:
-  - Thay vì tự động reset ngay lập tức, app sẽ chuyển sang màn hình xem kết quả.
-  - Ảnh chụp/chọn được hiển thị sắc nét trong khung viền bo cong có bóng đổ phát sáng (Glow border).
-  - Caption tiếng Việt sinh ra bởi mô hình GRIT được trình bày trang trọng trong thẻ **Glassmorphic** nền mờ sang xịn.
-- **Nút "Đọc mô tả" (TTS - Text-to-Speech) thông minh**:
-  - Cho phép người dùng chạm để nghe máy đọc hoặc chạm lần nữa để dừng đọc (`Play/Pause`).
-  - Có hiệu ứng màu sắc thay đổi động khi đang phát âm thanh để tăng tính tương tác.
-- **Hộp thoại Cấu hình Máy chủ Colab động**:
-  - Một nút **Settings (Bánh răng)** tinh xảo trên góc phải HUD.
-  - Chạm vào sẽ mở Modal cho phép **dán trực tiếp địa chỉ Ngrok hoặc Cloudflared mới** mà không cần sửa code hay rebuild lại ứng dụng.
-- **Hỗ trợ Điều khiển rảnh tay bằng Giọng nói (Voice Control)**:
-  - Khi ở camera: Nói _"Chụp"_ hoặc _"Chụp ảnh"_ để kích hoạt.
-  - Khi ở kết quả: Nói _"Quay lại"_, _"Chụp tiếp"_, hoặc _"Thử lại"_ để quay lại màn hình máy ảnh; nói _"Đọc lại"_, _"Nghe lại"_ để TTS đọc lại mô tả.
+### 🎤 Điều khiển hoàn toàn bằng giọng nói
+Mọi thao tác đều có thể thực hiện bằng giọng nói: chụp ảnh, mở thư viện, hỏi đáp, chuyển màn hình, cài đặt. Audio half-duplex đảm bảo app không bao giờ nghe tiếng chính mình.
 
 ---
 
-## 🛠️ Hướng dẫn Từng Bước Chạy Demo
+## Tech Stack
 
-### Bước 1: Chuẩn bị mô hình & Chạy Backend trên Google Colab
+| Layer | Công nghệ |
+|---|---|
+| Framework | Expo SDK ~54 (dev client) |
+| Runtime | React Native 0.81.5 · React 19.1.0 |
+| Language | TypeScript 5.9 strict |
+| AI | Firebase AI Logic (`gemini-3.6-flash`) qua `@react-native-firebase/{app,ai,app-check}` 23.8.8 |
+| Object Detection | Google ML Kit on-device (`@infinitered/react-native-mlkit-object-detection` 5.0.0) |
+| Camera | expo-camera |
+| TTS | expo-speech (vi-VN) |
+| ASR | expo-speech-recognition |
+| Navigation | @react-navigation/native-stack (4 screens) |
 
-Trên Notebook Colab của bạn, hãy viết một script FastAPI hoặc Flask đơn giản chạy bằng GPU để tải checkpoint `full_train_epoch3_model.pth` và sinh caption.
+> **Lưu ý:** Expo Go **không** dùng được vì project sử dụng native modules. Cần build dev client.
 
-Dưới đây là code backend gợi ý bằng **FastAPI** cực kỳ gọn nhẹ:
+---
 
-```python
-import os
-import torch
-from fastapi import FastAPI, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image
-import io
+## Yêu cầu hệ thống
 
-app = FastAPI()
+- **Node.js** ≥ 18
+- **Yarn** (v1 classic)
+- **Xcode** ≥ 15 (cho iOS, cần macOS)
+- **Android Studio** + Android SDK (cho Android)
+- **Máy thật** (khuyến nghị) — ML Kit và speech recognition hoạt động tốt nhất trên thiết bị thật
+- **Firebase project** `visionvoice-app-2026` đã được cấu hình sẵn (SDK config files có trong repo)
 
-# Cấu hình CORS để app di động truy cập được
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+---
 
-# 1. Tải mô hình GRIT đã fine-tune của nhóm bạn tại đây
-print("Loading GRIT fine-tuned checkpoint...")
-# model = load_your_grit_model("full_train_epoch3_model.pth")
-# model.eval()
+## Cài đặt & Chạy
 
-@app.post("/caption")
-async def generate_caption(image: UploadFile = File(...)):
-    try:
-        # Đọc dữ liệu ảnh từ request gửi lên
-        image_data = await image.read()
-        pil_image = Image.open(io.BytesIO(image_data)).convert("RGB")
-
-        # 2. Thực hiện inference mô hình GRIT
-        # caption_vietnamese = model.predict(pil_image)
-        caption_vietnamese = "có một người phụ nữ đang đứng bên quầy hàng"  # Ví dụ mẫu trả về
-
-        return {"caption": caption_vietnamese}
-    except Exception as e:
-        return {"error": str(e)}, 500
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-```
-
-### Bước 2: Tạo Public URL qua Ngrok / Cloudflared trên Colab
-
-Chạy lệnh sau trên một cell Colab mới để chuyển hướng cổng API `8000` ra internet công cộng:
-
-**Sử dụng Ngrok:**
-
-```python
-!pip install pyngrok
-from pyngrok import ngrok
-# Thiết lập authtoken của bạn
-ngrok.set_auth_token("YOUR_NGROK_AUTHTOKEN")
-public_url = ngrok.connect(8000)
-print("Public API URL:", public_url.public_url)
-```
-
-**Hoặc sử dụng Cloudflared (Miễn phí, không cần token):**
+### 1. Clone và cài dependencies
 
 ```bash
-!wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-!dpkg -i cloudflared-linux-amd64.deb
-!cloudflared tunnel --url http://127.0.0.1:8000
+git clone <repo-url>
+cd VisionVoice
+yarn install
 ```
 
-_Hãy copy đường dẫn public dạng `https://xxxx.ngrok-free.app` hoặc `https://xxxx.trycloudflare.com` được in ra màn hình._
+### 2. Prebuild native projects
+
+```bash
+npx expo prebuild --clean
+```
+
+Lệnh này tự động:
+- Tạo thư mục `ios/` và `android/`
+- Áp dụng plugin `withMLKitVersionFix` để resolve conflict ML Kit / Firebase
+- Cài CocoaPods cho iOS
+
+### 3. Chạy trên thiết bị
+
+```bash
+# Android
+yarn android
+
+# iOS
+yarn ios
+```
+
+### 4. Đăng ký App Check debug token
+
+Lần chạy đầu tiên, app sẽ in debug token ra native log:
+
+- **Android:** `adb logcat | grep -i "appcheck"` — tìm dòng `DebugAppCheckProvider` chứa UUID
+- **iOS:** Xcode console — tìm `Firebase App Check debug token`
+
+Đăng ký token trong Firebase console:
+1. Vào [Firebase Console](https://console.firebase.google.com) → project `visionvoice-app-2026`
+2. App Check → Apps → chọn app → ⋮ → **Manage debug tokens**
+3. Add → dán token → đặt tên theo máy
+
+> ⚠️ Mỗi máy/emulator có token riêng. Xóa app cài lại sẽ đổi token — cần đăng ký lại.
+
+### 5. Kiểm tra
+
+Mở app → chụp 1 ảnh → nếu có mô tả bằng giọng nói = **thành công** ✅
+
+Nếu gặp lỗi 403 trong log = token chưa đăng ký, quay lại bước 4.
 
 ---
 
-### Bước 3: Cấu hình URL vào Mobile App & Trình diễn Luồng Demo
+## Các lệnh hữu ích
 
-1. Khởi động Mobile App (`npm start` hoặc `expo start`).
-2. Trên màn hình máy ảnh của ứng dụng, chạm vào biểu tượng **bánh răng cài đặt (Settings)** ở góc trên bên phải.
-3. **Dán địa chỉ public URL** đã copy ở Bước 2 vào ô nhập liệu.
-4. Nhấn **CẬP NHẬT**. Ứng dụng sẽ phản hồi bằng giọng nói: _"Đã cập nhật cấu hình kết nối mới thành công."_
-5. **Trình diễn kịch bản:**
-   - **Cách 1 (Chụp trực tiếp)**: Đưa máy ảnh lên, nhấn nút chụp hoặc nói to _"Chụp ảnh"_. App sẽ chụp, hiện overlay loading _"GRIT đang phân tích..."_, nhận caption từ Colab, hiển thị ảnh sắc nét kèm caption tiếng Việt trên thẻ Glassmorphic và tự động đọc to mô tả đó.
-   - **Cách 2 (Chọn từ gallery)**: Nhấn nút thư viện bên trái nút chụp, chọn một bức ảnh chuẩn bị sẵn. App gửi lên backend Colab, hiển thị ảnh cùng kết quả sinh caption và hỗ trợ nút _"Đọc lại mô tả"_ vô cùng tiện lợi.
-   - Để demo tiếp ảnh khác, chỉ cần nói _"Quay lại"_ hoặc ấn nút _"CHỤP ẢNH MỚI"_ để trở lại camera trực tiếp!
+```bash
+yarn install                    # Cài dependencies
+yarn typecheck                  # Kiểm tra TypeScript (tsc --noEmit)
+yarn test                       # Chạy unit tests (jest)
+npx expo prebuild --clean       # Tạo lại android/ + ios/
+yarn android                    # Build + chạy Android dev client
+yarn ios                        # Build + chạy iOS dev client
+```
 
 ---
 
-💡 **Lời khuyên cho buổi demo thành công:**
+## Cấu trúc project
 
-- Chuẩn bị sẵn từ 3 - 5 bức ảnh có độ sáng tốt, bố cục rõ ràng để mô hình GRIT sinh caption ổn định nhất.
-- Nhắc nhở hội đồng đánh giá đây là phiên bản thử nghiệm thực tế (prototype/demo) sử dụng hạ tầng Colab để chạy GPU hiệu năng cao phục vụ trình diễn.
-- Test trước micro và loa của thiết bị di động để tính năng giọng nói (TTS) hoạt động tốt nhất.
+```
+VisionVoice/
+├── index.ts                     # Entry point
+├── App.tsx                      # Root: Firebase init, TTS init, providers, navigation
+├── src/
+│   ├── constants/
+│   │   ├── config.ts            # Tham số cấu hình (model, thresholds, timings, MOCK_MODE)
+│   │   └── strings.ts           # Tất cả chuỗi tiếng Việt + system instruction
+│   ├── theme/                   # Design tokens (colors, typography, spacing)
+│   ├── navigation/              # Stack navigator (4 screens)
+│   ├── screens/
+│   │   ├── HomeCameraScreen     # Camera + chụp ảnh + hiển thị kết quả
+│   │   ├── QASessionScreen      # Hỏi đáp nhiều lượt về ảnh
+│   │   ├── ObstacleModeScreen   # Cảnh báo vật cản real-time
+│   │   └── SettingsScreen       # Cài đặt giọng nói + xuất metrics
+│   ├── services/                # Business logic (gemini, audioSession, tts, obstacleDetector...)
+│   ├── hooks/                   # React hooks (useVoiceControl, useQASession, useObstacleScanner...)
+│   ├── components/              # UI components (ShutterButton, StateIndicator, SeverityBanner...)
+│   └── state/                   # State management (captureMachine, SettingsContext)
+├── plugins/
+│   └── withMLKitVersionFix.js   # Expo config plugin: fix ML Kit / Firebase pod conflict
+├── assets/sounds/               # Earcons (shutter, listen-start, listen-end, danger)
+├── eval/                        # Dữ liệu + scripts đánh giá cho báo cáo
+├── scripts/                     # Scripts hỗ trợ (eval-caption, parse-metrics)
+└── docs/                        # Tài liệu kỹ thuật + hướng dẫn
+```
 
-Chúc nhóm bạn có một buổi báo cáo đồ án thành công rực rỡ! 🎉
+---
+
+## MOCK_MODE
+
+Để phát triển UI mà không tốn quota Gemini (free tier), bật `MOCK_MODE = true` trong `src/constants/config.ts`. App sẽ trả về mô tả giả sau 1–2 giây delay thay vì gọi API thật.
+
+---
+
+## Đánh giá (Evaluation)
+
+Project bao gồm bộ đánh giá cho báo cáo đồ án:
+
+- `eval/manifest.json` — danh sách ảnh test
+- `eval/qa-set.json` — bộ câu hỏi đánh giá
+- `scripts/eval-caption.mjs` — so sánh chất lượng mô tả
+- `scripts/parse-metrics.mjs` — phân tích metrics từ log
+
+Chi tiết protocol đánh giá: xem `docs/evaluation-protocol.md`.
+
+---
+
+## Lưu ý quan trọng
+
+- **Version pins cố ý:** `@react-native-firebase` 23.8.8 (v25 cần Xcode mới hơn), `jest` ~29.7 (tương thích jest-expo). Không nâng version nếu chưa verify build.
+- **iOS deployment target:** 16.0 (yêu cầu bởi GoogleMLKit 9.0).
+- **Thêm native module mới** = cần `npx expo prebuild --clean` + rebuild, không chỉ Metro reload.
+- **App Check:** Nếu gặp vấn đề khi demo, có thể tạm chuyển sang **Unenforced** trong Firebase console → App Check → AI Logic.
+
+---
+
+## License
+
+Đồ án tốt nghiệp — chỉ dùng cho mục đích học thuật.
