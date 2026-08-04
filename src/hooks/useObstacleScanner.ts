@@ -119,9 +119,11 @@ export function useObstacleScanner(
       }
       const startMs = Date.now();
       let frameUri: string | null = null;
+      let hadError = false;
       try {
         const camera = cameraRef.current;
         if (camera === null) {
+          hadError = true;
           return; // Camera chưa gắn xong — finally vẫn hẹn chu kỳ kế tiếp.
         }
 
@@ -162,13 +164,27 @@ export function useObstacleScanner(
           await announceAssessment(result);
         }
       } catch (err) {
+        hadError = true;
         // Một khung hình lỗi không được làm chết vòng quét — cảnh báo rồi quét tiếp.
-        console.warn('Lỗi khi quét vật cản:', err);
+        // Không log khi đã cancel (camera unmount khi thoát screen).
+        if (!isCancelled()) {
+          console.warn('Lỗi khi quét vật cản:', err);
+        }
       } finally {
         if (frameUri !== null) {
           void deleteFrameFile(frameUri);
         }
-        scheduleNext(startMs);
+        if (isCancelled()) {
+          return;
+        }
+        // Lỗi hoặc camera chưa sẵn sàng → chờ đủ 1 chu kỳ thay vì retry ngay.
+        if (hadError) {
+          timerRef.current = setTimeout(() => {
+            void cycle();
+          }, OBSTACLE_SCAN_INTERVAL_MS);
+        } else {
+          scheduleNext(startMs);
+        }
       }
     };
 

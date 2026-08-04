@@ -1,12 +1,13 @@
 import { useIsFocused } from '@react-navigation/native';
 import type { CameraView } from 'expo-camera';
 import { useKeepAwake } from 'expo-keep-awake';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { BigActionButton } from '../components/BigActionButton';
 import { CameraViewport } from '../components/CameraViewport';
 import { SeverityBanner } from '../components/SeverityBanner';
+import { CAMERA_WARMUP_DELAY_MS } from '../constants/config';
 import { NAV, OBSTACLE } from '../constants/strings';
 import { announceScreen } from '../hooks/useAccessibilityFocus';
 import { useObstacleScanner } from '../hooks/useObstacleScanner';
@@ -29,8 +30,15 @@ export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenPro
 
   const cameraRef = useRef<CameraView | null>(null);
   const isFocused = useIsFocused();
-  const { assessment } = useObstacleScanner(cameraRef, { active: isFocused });
+  const [cameraReady, setCameraReady] = useState(false);
+  const { assessment } = useObstacleScanner(cameraRef, { active: isFocused && cameraReady });
   const severity = assessment?.severity ?? 'safe';
+
+  const handleCameraReady = useCallback(() => {
+    // Android CameraX cần warm-up sau onCameraReady trước khi takePictureAsync hoạt động.
+    const id = setTimeout(() => setCameraReady(true), CAMERA_WARMUP_DELAY_MS);
+    return () => clearTimeout(id);
+  }, []);
 
   const exit = useCallback(() => {
     void speakExclusive(OBSTACLE.EXIT);
@@ -49,7 +57,7 @@ export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenPro
 
   return (
     <View style={styles.container}>
-      <CameraViewport ref={cameraRef} />
+      <CameraViewport ref={cameraRef} onReady={handleCameraReady} animateShutter={false} />
       <View pointerEvents="none" style={styles.scrim} />
       <SeverityBanner severity={severity} objectLabel={assessment?.label} />
       <View style={styles.stopZone}>

@@ -11,6 +11,7 @@ export const DETECTION_FRAME_QUALITY = 0.2;
 
 // Obstacle detection
 export const OBSTACLE_SCAN_INTERVAL_MS = 900;
+export const CAMERA_WARMUP_DELAY_MS = 500;
 export const OBSTACLE_SCORE_MIN = 0.35;
 export const DANGER_AREA_RATIO = 0.35;
 export const WARNING_AREA_RATIO = 0.18;
@@ -27,6 +28,8 @@ export const ANNOUNCE_COOLDOWN_MS = {
 // Voice / ASR timing
 export const ASR_RESTART_ON_END_MS = 500;
 export const ASR_RESTART_ON_ERROR_MS = 2000;
+export const ASR_MAX_CONSECUTIVE_ERRORS = 5;
+export const ASR_MAX_BACKOFF_MS = 30_000;
 export const TTS_GUARD_DELAY_MS = 400;
 export const QA_RELISTEN_DELAY_MS = 800;
 

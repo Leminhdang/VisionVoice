@@ -206,7 +206,7 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
     obstacle: openObstacle,
     settings: openSettings,
     stop: stopSpeaking,
-  });
+  }, { enabled: ready });
 
   if (!ready) {
     return (
@@ -246,6 +246,13 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
       {isProcessing && (
         <View style={styles.indicatorWrap} pointerEvents="none">
           <StateIndicator state={INDICATOR_BY_PHASE[phase]} />
+        </View>
+      )}
+      {__DEV__ && (
+        <View style={styles.debugOverlay} pointerEvents="none">
+          <Text style={styles.debugText} numberOfLines={5}>
+            {`[${phase}] ${lastDescription ?? '—'}`}
+          </Text>
         </View>
       )}
       <View style={[styles.shutterWrap, { paddingBottom: insets.bottom + spacing.md }]}>
@@ -296,4 +303,18 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   actions: { gap: spacing.sm },
+  debugOverlay: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    top: '45%',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 8,
+    padding: spacing.sm,
+  },
+  debugText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
 });

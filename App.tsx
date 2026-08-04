@@ -1,11 +1,11 @@
 import {
+  ObjectDetectionContext,
   useObjectDetectionModels,
-  useObjectDetectionProvider,
 } from '@infinitered/react-native-mlkit-object-detection';
 import type { RNMLKitObjectDetectorOptions } from '@infinitered/react-native-mlkit-object-detection';
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RootNavigator } from './src/navigation/RootNavigator';
@@ -40,15 +40,18 @@ function DetectionRoot() {
     loadDefaultModel: true,
     defaultModelOptions: DEFAULT_DETECTOR_OPTIONS,
   });
-  const { ObjectDetectionProvider } = useObjectDetectionProvider(models);
+  // useObjectDetectionProvider tạo inline component MỚI mỗi render → React
+  // thấy component type khác → unmount toàn bộ tree → remount loop.
+  // Dùng Context.Provider trực tiếp với value ổn định để tránh remount.
+  const contextValue = useMemo(() => ({ ...models }), [models]);
 
   return (
-    <ObjectDetectionProvider>
+    <ObjectDetectionContext.Provider value={contextValue}>
       <NavigationContainer theme={NAV_THEME}>
         <RootNavigator />
       </NavigationContainer>
       <StatusBar style="light" />
-    </ObjectDetectionProvider>
+    </ObjectDetectionContext.Provider>
   );
 }
 

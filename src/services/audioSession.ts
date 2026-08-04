@@ -5,6 +5,8 @@ import type {
 } from 'expo-speech-recognition';
 
 import {
+  ASR_MAX_BACKOFF_MS,
+  ASR_MAX_CONSECUTIVE_ERRORS,
   ASR_RESTART_ON_END_MS,
   ASR_RESTART_ON_ERROR_MS,
   SPEECH_RECOGNITION_LOCALE,
@@ -40,6 +42,7 @@ let wantListening = false;
 let isSpeaking = false;
 let onTranscriptRef: TranscriptCallback | null = null;
 let restartTimerId: ReturnType<typeof setTimeout> | null = null;
+let consecutiveErrors = 0;
 let subscriptions: Subscription[] = [];
 
 /**
@@ -48,6 +51,7 @@ let subscriptions: Subscription[] = [];
  */
 export async function startListening(onTranscript: TranscriptCallback): Promise<void> {
   onTranscriptRef = onTranscript;
+  consecutiveErrors = 0;
   try {
     const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!permission.granted) {
@@ -123,6 +127,7 @@ function handleResult(event: ExpoSpeechRecognitionResultEvent): void {
   if (isSpeaking) {
     return;
   }
+  consecutiveErrors = 0;
   const transcript = event.results[0]?.transcript ?? '';
   if (transcript.trim().length === 0) {
     return;
@@ -132,6 +137,8 @@ function handleResult(event: ExpoSpeechRecognitionResultEvent): void {
 
 function handleEnd(): void {
   isListening = false;
+  // Normal end (no error) — reset backoff counter.
+  consecutiveErrors = 0;
   if (wantListening && !isSuspended && !isSpeaking) {
     scheduleRestart(ASR_RESTART_ON_END_MS);
   }
@@ -140,12 +147,25 @@ function handleEnd(): void {
 function handleError(event: ExpoSpeechRecognitionErrorEvent): void {
   isListening = false;
   // 'aborted' is self-induced (hardStopRecognition) — not worth a warning.
-  if (event.error !== 'aborted') {
-    console.warn('Lỗi khi nhận dạng giọng nói:', event.error, event.message);
+  if (event.error === 'aborted') {
+    return;
   }
-  if (wantListening && !isSuspended && !isSpeaking) {
-    scheduleRestart(ASR_RESTART_ON_ERROR_MS);
+  consecutiveErrors++;
+  console.warn('Lỗi khi nhận dạng giọng nói:', event.error, event.message);
+  if (!wantListening || isSuspended || isSpeaking) {
+    return;
   }
+  if (consecutiveErrors > ASR_MAX_CONSECUTIVE_ERRORS) {
+    console.warn(
+      `Nhận dạng giọng nói: ${consecutiveErrors} lỗi liên tiếp, tạm dừng thử lại.`,
+    );
+    return;
+  }
+  const backoff = Math.min(
+    ASR_RESTART_ON_ERROR_MS * Math.pow(2, consecutiveErrors - 1),
+    ASR_MAX_BACKOFF_MS,
+  );
+  scheduleRestart(backoff);
 }
 
 function startRecognition(): void {

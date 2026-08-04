@@ -6,10 +6,12 @@ import { selectPictureSize } from '../services/imagePipeline';
 
 export interface CameraViewportProps {
   onReady?: () => void;
+  /** Tắt animation chớp trắng khi chụp — dùng cho obstacle scan loop. */
+  animateShutter?: boolean;
 }
 
 export const CameraViewport = forwardRef<CameraView, CameraViewportProps>(
-  function CameraViewport({ onReady }, ref) {
+  function CameraViewport({ onReady, animateShutter }, ref) {
     const innerCameraRef = useRef<CameraView | null>(null);
     const [pictureSize, setPictureSize] = useState<string | undefined>(undefined);
 
@@ -49,6 +51,8 @@ export const CameraViewport = forwardRef<CameraView, CameraViewportProps>(
         ref={assignRefs}
         style={StyleSheet.absoluteFill}
         facing="back"
+        flash="off"
+        animateShutter={animateShutter ?? true}
         pictureSize={pictureSize}
         onCameraReady={handleCameraReady}
       />
