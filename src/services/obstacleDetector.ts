@@ -1,5 +1,5 @@
 // Pure obstacle assessment logic — no React, no Expo imports.
-// Consumes ML Kit object-detection results and decides severity + announcements.
+// Consumes object-detection results and decides severity + announcements.
 
 import {
   ANNOUNCE_COOLDOWN_MS,
@@ -12,11 +12,10 @@ import { OBSTACLE } from '../constants/strings';
 import type { ObstacleSensitivity } from '../state/SettingsContext';
 
 /**
- * Structural alias of `RNMLKitObjectDetectionObject` from
- * `@infinitered/react-native-mlkit-object-detection` (which the lib types as
- * `{ frame: { origin: {x, y}, size: {x, y} }, labels: { text, confidence, index }[] }`,
- * where `size.x` is width and `size.y` is height). Declared locally so this
- * module stays decoupled from the native package.
+ * Structural alias for detected objects. Shape matches the output of
+ * tfliteDetector.parseDetections() — frame origin/size in pixels,
+ * labels with confidence scores. Declared locally so this module stays
+ * decoupled from the native detection package.
  */
 export interface DetectedObjectLabel {
   text: string;

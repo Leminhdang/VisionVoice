@@ -148,8 +148,8 @@ describe('assessDetections', () => {
   });
 
   test('returns null label for a label text missing from OBSTACLE.LABEL_VI', () => {
-    // Arrange: 'giraffe' has no Vietnamese mapping
-    const objects = [makeObject(15, 20, 70, 50, [{ text: 'giraffe', confidence: 0.9 }])];
+    // Arrange: 'unicorn' has no COCO/Vietnamese mapping
+    const objects = [makeObject(15, 20, 70, 50, [{ text: 'unicorn', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'medium');

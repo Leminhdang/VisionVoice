@@ -1,13 +1,12 @@
 import { useIsFocused } from '@react-navigation/native';
-import type { CameraView } from 'expo-camera';
 import { useKeepAwake } from 'expo-keep-awake';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
+import type { CameraPhotoOutput } from 'react-native-vision-camera';
 
 import { BigActionButton } from '../components/BigActionButton';
 import { CameraViewport } from '../components/CameraViewport';
 import { SeverityBanner } from '../components/SeverityBanner';
-import { CAMERA_WARMUP_DELAY_MS } from '../constants/config';
 import { NAV, OBSTACLE } from '../constants/strings';
 import { announceScreen } from '../hooks/useAccessibilityFocus';
 import { useObstacleScanner } from '../hooks/useObstacleScanner';
@@ -21,24 +20,17 @@ import { SCREEN_PADDING, spacing } from '../theme/spacing';
 const SCRIM_OPACITY = 0.55;
 
 /**
- * Chế độ dò vật cản: camera chạy nền, useObstacleScanner quét theo chu kỳ khi
- * màn hình đang focus (blur → active=false → vòng quét dừng hẳn, không TTS
- * rơi rớt sau khi thoát). Màn hình luôn sáng nhờ useKeepAwake.
+ * Chế độ dò vật cản: camera chạy nền, useObstacleScanner chụp frame
+ * mỗi ~900ms qua photoOutput → TFLite inference → assessment + TTS.
+ * Blur → active=false → scanner dừng, không TTS rơi rớt sau khi thoát.
+ * Màn hình luôn sáng nhờ useKeepAwake.
  */
 export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenProps) {
   useKeepAwake();
 
-  const cameraRef = useRef<CameraView | null>(null);
   const isFocused = useIsFocused();
-  const [cameraReady, setCameraReady] = useState(false);
-  const { assessment } = useObstacleScanner(cameraRef, { active: isFocused && cameraReady });
+  const { assessment, setPhotoOutput } = useObstacleScanner({ active: isFocused });
   const severity = assessment?.severity ?? 'safe';
-
-  const handleCameraReady = useCallback(() => {
-    // Android CameraX cần warm-up sau onCameraReady trước khi takePictureAsync hoạt động.
-    const id = setTimeout(() => setCameraReady(true), CAMERA_WARMUP_DELAY_MS);
-    return () => clearTimeout(id);
-  }, []);
 
   const exit = useCallback(() => {
     void speakExclusive(OBSTACLE.EXIT);
@@ -50,14 +42,21 @@ export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenPro
   useEffect(() => {
     announceScreen(NAV.OBSTACLE);
     void speakExclusive(NAV.OBSTACLE);
-    // Không dừng TTS khi unmount: exit() vừa phát OBSTACLE.EXIT ngay trước khi
-    // rời màn hình — gọi tts.stop() ở đây sẽ cắt mất câu thông báo thoát.
-    // Vòng quét và ASR đã tự dọn dẹp qua active/useFocusEffect.
   }, []);
+
+  const handlePhotoOutputReady = useCallback(
+    (output: CameraPhotoOutput) => {
+      setPhotoOutput(output);
+    },
+    [setPhotoOutput],
+  );
 
   return (
     <View style={styles.container}>
-      <CameraViewport ref={cameraRef} onReady={handleCameraReady} animateShutter={false} />
+      <CameraViewport
+        isActive={isFocused}
+        onPhotoOutputReady={handlePhotoOutputReady}
+      />
       <View pointerEvents="none" style={styles.scrim} />
       <SeverityBanner severity={severity} objectLabel={assessment?.label} />
       <View style={styles.stopZone}>
@@ -79,7 +78,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   scrim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.bg,
     opacity: SCRIM_OPACITY,
   },

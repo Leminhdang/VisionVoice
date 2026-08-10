@@ -1,13 +1,10 @@
-import type { CameraView } from 'expo-camera';
 import { File } from 'expo-file-system';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import type { CameraPhotoOutput, Photo } from 'react-native-vision-camera';
 
 import {
-  CAPTURE_QUALITY,
-  DETECTION_FRAME_QUALITY,
   IMAGE_COMPRESS,
   IMAGE_RESIZE_WIDTH,
-  TARGET_PICTURE_SIZE,
 } from '../constants/config';
 
 export interface PreparedImage {
@@ -15,39 +12,6 @@ export interface PreparedImage {
   base64: string;
   width: number;
   height: number;
-}
-
-/**
- * Chọn kích thước ảnh chụp có cạnh dài gần TARGET_PICTURE_SIZE nhất
- * trong các kích thước camera hỗ trợ (định dạng 'WxH').
- */
-export async function selectPictureSize(camera: CameraView): Promise<string | undefined> {
-  try {
-    const sizes = await camera.getAvailablePictureSizesAsync();
-    let bestSize: string | undefined = sizes[0];
-    let minDiff = Infinity;
-
-    for (const size of sizes) {
-      const parts = size.split('x');
-      if (parts.length !== 2) continue;
-
-      const width = parseInt(parts[0], 10);
-      const height = parseInt(parts[1], 10);
-      if (Number.isNaN(width) || Number.isNaN(height)) continue;
-
-      const maxDimension = Math.max(width, height);
-      const diff = Math.abs(maxDimension - TARGET_PICTURE_SIZE);
-      if (diff < minDiff) {
-        minDiff = diff;
-        bestSize = size;
-      }
-    }
-
-    return bestSize;
-  } catch (err) {
-    console.warn('Lỗi khi lấy kích thước ảnh:', err);
-    return undefined;
-  }
 }
 
 /**
@@ -73,32 +37,35 @@ export async function prepareFromUri(uri: string): Promise<PreparedImage> {
   };
 }
 
-/** Chụp ảnh từ camera rồi thu nhỏ, nén và mã hoá base64. */
-export async function captureAndPrepare(camera: CameraView): Promise<PreparedImage> {
-  const photo = await camera.takePictureAsync({ quality: CAPTURE_QUALITY });
+/**
+ * Chụp ảnh từ photoOutput, lưu ra temp file, rồi thu nhỏ + nén + base64.
+ * Vision Camera v5: capturePhoto() trả Photo object, cần saveToTemporaryFileAsync()
+ * để lấy file path.
+ */
+export async function captureAndPrepare(photoOutput: CameraPhotoOutput): Promise<PreparedImage> {
+  const photo: Photo = await photoOutput.capturePhoto({}, {});
+  const tempPath = await photo.saveToTemporaryFileAsync();
+  const uri = tempPath.startsWith('file://') ? tempPath : `file://${tempPath}`;
+  photo.dispose();
 
-  if (!photo?.uri) {
-    throw new Error('Không chụp được ảnh.');
-  }
-
-  return prepareFromUri(photo.uri);
+  return prepareFromUri(uri);
 }
 
-/** Chụp nhanh một khung hình chất lượng thấp, không âm thanh, cho nhận diện. */
+/**
+ * Chụp frame nhẹ cho obstacle detection — không nén, chỉ lưu temp file.
+ * Trả về URI để TFLite detector resize + inference.
+ */
 export async function captureFrameForDetection(
-  camera: CameraView,
+  photoOutput: CameraPhotoOutput,
 ): Promise<{ uri: string; width: number; height: number }> {
-  const photo = await camera.takePictureAsync({
-    quality: DETECTION_FRAME_QUALITY,
-    skipProcessing: true,
-    shutterSound: false,
-  });
+  const photo: Photo = await photoOutput.capturePhoto({}, {});
+  const tempPath = await photo.saveToTemporaryFileAsync();
+  const uri = tempPath.startsWith('file://') ? tempPath : `file://${tempPath}`;
+  const width = photo.width;
+  const height = photo.height;
+  photo.dispose();
 
-  if (!photo?.uri) {
-    throw new Error('Không chụp được khung hình.');
-  }
-
-  return { uri: photo.uri, width: photo.width, height: photo.height };
+  return { uri, width, height };
 }
 
 /** Xoá file khung hình tạm — best-effort, bỏ qua lỗi. */

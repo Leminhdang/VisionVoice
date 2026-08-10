@@ -1,4 +1,4 @@
-import type { CameraView } from 'expo-camera';
+import type { CameraRef, CameraPhotoOutput } from 'react-native-vision-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
@@ -50,7 +50,8 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
   const { phase, dispatch, canCapture, isProcessing } = useCaptureMachine();
   const insets = useSafeAreaInsets();
   const { ref: titleRef, focusNow } = useAccessibilityFocus();
-  const cameraRef = useRef<CameraView | null>(null);
+  const cameraRef = useRef<CameraRef | null>(null);
+  const photoOutputRef = useRef<CameraPhotoOutput | null>(null);
   const [lastImage, setLastImage] = useState<PreparedImage | null>(null);
   const [lastDescription, setLastDescription] = useState<string | null>(null);
 
@@ -90,15 +91,15 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
 
   const runCaptureFlow = useCallback(
     async (trigger: CaptureTrigger): Promise<void> => {
-      const camera = cameraRef.current;
-      if (camera === null) return;
+      const output = photoOutputRef.current;
+      if (output === null) return;
       const captureId = nextCaptureId();
       logMetric({ event: 'capture_start', captureId, trigger });
       void hapticCapture();
       void playShutter();
       dispatch('CAPTURE_START');
       try {
-        const image = await captureAndPrepare(camera);
+        const image = await captureAndPrepare(output);
         await analyzeAndSpeak(image, captureId);
       } catch (err) {
         console.warn('Lỗi khi chụp ảnh:', err);
@@ -236,7 +237,10 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
 
   return (
     <View style={styles.container}>
-      <CameraViewport ref={cameraRef} />
+      <CameraViewport
+        ref={cameraRef}
+        onPhotoOutputReady={(output) => { photoOutputRef.current = output; }}
+      />
       <View style={styles.scrimTop} pointerEvents="none" />
       <View style={styles.scrimBottom} pointerEvents="none" />
       <View style={[styles.titleRow, { top: insets.top + spacing.md }]} ref={titleRef}
@@ -291,7 +295,7 @@ const styles = StyleSheet.create({
   titleRow: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   title: { ...typography.title, color: colors.textPrimary },
   indicatorWrap: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },

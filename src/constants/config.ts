@@ -7,11 +7,11 @@ export const CAPTURE_QUALITY = 0.4;
 export const IMAGE_RESIZE_WIDTH = 800;
 export const IMAGE_COMPRESS = 0.5;
 export const TARGET_PICTURE_SIZE = 1280;
-export const DETECTION_FRAME_QUALITY = 0.2;
+
 
 // Obstacle detection
-export const OBSTACLE_SCAN_INTERVAL_MS = 900;
-export const CAMERA_WARMUP_DELAY_MS = 500;
+export const OBSTACLE_ASSESSMENT_THROTTLE_MS = 900;
+export const TFLITE_MODEL_INPUT_SIZE = 320;
 export const OBSTACLE_SCORE_MIN = 0.35;
 export const DANGER_AREA_RATIO = 0.35;
 export const WARNING_AREA_RATIO = 0.18;

@@ -1,15 +1,11 @@
-import {
-  ObjectDetectionContext,
-  useObjectDetectionModels,
-} from '@infinitered/react-native-mlkit-object-detection';
-import type { RNMLKitObjectDetectorOptions } from '@infinitered/react-native-mlkit-object-detection';
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { initFirebase } from './src/services/firebase';
+import { initTfliteModel } from './src/services/tfliteDetector';
 import { initTts } from './src/services/tts';
 import { SettingsProvider } from './src/state/SettingsContext';
 import { colors } from './src/theme/colors';
@@ -27,46 +23,22 @@ const NAV_THEME = {
   },
 };
 
-// Tham chiếu module-level ổn định — useObjectDetectionModels đưa options vào
-// deps của useEffect, nên object mới mỗi render sẽ khiến model nạp lại liên tục.
-const DEFAULT_DETECTOR_OPTIONS: RNMLKitObjectDetectorOptions = {
-  shouldEnableClassification: true,
-  shouldEnableMultipleObjects: true,
-  detectorMode: 'singleImage',
-};
-
-function DetectionRoot() {
-  const models = useObjectDetectionModels({
-    loadDefaultModel: true,
-    defaultModelOptions: DEFAULT_DETECTOR_OPTIONS,
-  });
-  // useObjectDetectionProvider tạo inline component MỚI mỗi render → React
-  // thấy component type khác → unmount toàn bộ tree → remount loop.
-  // Dùng Context.Provider trực tiếp với value ổn định để tránh remount.
-  const contextValue = useMemo(() => ({ ...models }), [models]);
-
-  return (
-    <ObjectDetectionContext.Provider value={contextValue}>
-      <NavigationContainer theme={NAV_THEME}>
-        <RootNavigator />
-      </NavigationContainer>
-      <StatusBar style="light" />
-    </ObjectDetectionContext.Provider>
-  );
-}
-
 export default function App() {
   useEffect(() => {
-    // Singleton trọn vòng đời app — tts.ts và firebase.ts ghi rõ chỉ gọi một
-    // lần từ App.tsx và không có teardown (subscription giữ nguyên chủ đích).
+    // Singleton trọn vòng đời app — tts.ts, firebase.ts và tfliteDetector.ts
+    // ghi rõ chỉ gọi một lần từ App.tsx và không có teardown.
     initTts();
     void initFirebase();
+    void initTfliteModel();
   }, []);
 
   return (
     <SafeAreaProvider>
       <SettingsProvider>
-        <DetectionRoot />
+        <NavigationContainer theme={NAV_THEME}>
+          <RootNavigator />
+        </NavigationContainer>
+        <StatusBar style="light" />
       </SettingsProvider>
     </SafeAreaProvider>
   );

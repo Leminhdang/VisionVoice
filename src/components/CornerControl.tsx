@@ -43,7 +43,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   background: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.surface,
     opacity: BG_OPACITY,
   },

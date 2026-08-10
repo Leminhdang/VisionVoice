@@ -14,11 +14,9 @@
     },
     "plugins": [
       [
-        "expo-camera",
+        "react-native-fast-tflite",
         {
-          "cameraPermission": "VisionVoice cần truy cập camera để chụp ảnh và mô tả khung cảnh.",
-          "microphonePermission": "VisionVoice cần truy cập micro để nhận lệnh giọng nói.",
-          "recordAudioAndroid": true
+          "enableCoreMLDelegate": true
         }
       ],
       [
@@ -26,7 +24,9 @@
         {
           "microphonePermission": "Cho phép VisionVoice nhận lệnh giọng nói để chụp ảnh.",
           "speechRecognitionPermission": "Cho phép VisionVoice nhận dạng giọng nói.",
-          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
         }
       ],
       [
@@ -42,11 +42,11 @@
         {
           "ios": {
             "useFrameworks": "static",
-            "deploymentTarget": "16.0"
+            "deploymentTarget": "16.4"
           }
         }
       ],
-      "./plugins/withMLKitVersionFix"
+      "expo-audio"
     ],
     "ios": {
       "supportsTablet": true,
@@ -57,7 +57,9 @@
         "NSMicrophoneUsageDescription": "VisionVoice cần micro để nhận lệnh giọng nói.",
         "NSSpeechRecognitionUsageDescription": "VisionVoice dùng nhận dạng giọng nói để nhận lệnh chụp ảnh.",
         "NSPhotoLibraryUsageDescription": "VisionVoice cần truy cập thư viện ảnh để chọn ảnh cần mô tả.",
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -65,7 +67,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F0F1A"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.visionvoice.app",
       "googleServicesFile": "./google-services.json",

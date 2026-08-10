@@ -1,5 +1,7 @@
 // All user-facing strings (Vietnamese). Code identifiers stay English.
 
+import { COCO_LABEL_VI } from './cocoLabels';
+
 export const GEMINI_SYSTEM_INSTRUCTION =
   'Bạn là trợ lý thị giác cho người khiếm thị. ' +
   'Luôn trả lời bằng 2 đến 3 câu ngắn gọn, tối đa 150 ký tự, tiếng Việt thuần, dễ nghe khi đọc to. ' +
@@ -88,30 +90,6 @@ export const QA = {
   TURN_ASSISTANT: (text: string) => `Trả lời: ${text}`,
 };
 
-const OBSTACLE_LABEL_VI: Record<string, string> = {
-  person: 'người',
-  chair: 'ghế',
-  table: 'bàn',
-  car: 'ô tô',
-  motorcycle: 'xe máy',
-  bicycle: 'xe đạp',
-  dog: 'chó',
-  cat: 'mèo',
-  door: 'cửa',
-  tree: 'cây',
-  stairs: 'cầu thang',
-  wall: 'tường',
-  pole: 'cột',
-  bench: 'ghế dài',
-  truck: 'xe tải',
-  bus: 'xe buýt',
-  bottle: 'chai nước',
-  couch: 'ghế sô pha',
-  bed: 'giường',
-  plant: 'chậu cây',
-  umbrella: 'cây dù',
-};
-
 export const OBSTACLE = {
   BANNER_SAFE: 'AN TOÀN',
   BANNER_WARNING: 'VẬT CẢN',
@@ -123,7 +101,7 @@ export const OBSTACLE = {
   EXIT: 'Đã tắt chế độ dò vật cản.',
   STOP_BUTTON: 'Dừng dò vật cản',
   STOP_HINT: 'Dừng quét vật cản và quay về màn hình máy ảnh.',
-  LABEL_VI: OBSTACLE_LABEL_VI,
+  LABEL_VI: COCO_LABEL_VI,
 };
 
 export const ERRORS = {
@@ -151,7 +129,7 @@ export const SETTINGS = {
   TEST_SENTENCE: 'Đây là giọng đọc của VisionVoice.',
   ABOUT:
     'VisionVoice — mô tả ảnh và hỏi đáp bằng Gemini qua Firebase AI Logic, ' +
-    'cảnh báo vật cản bằng ML Kit trên thiết bị.',
+    'cảnh báo vật cản bằng MediaPipe trên thiết bị.',
   EXIT: 'Đã đóng cài đặt.',
   SAMPLE_RATE: 'Đây là tốc độ đọc mới.',
   SAMPLE_PITCH: 'Đây là cao độ giọng mới.',

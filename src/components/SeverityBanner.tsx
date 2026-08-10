@@ -61,7 +61,7 @@ export function SeverityBanner({ severity, objectLabel }: SeverityBannerProps) {
 
 const styles = StyleSheet.create({
   safeFrame: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderWidth: FRAME_BORDER,
     borderColor: colors.success,
   },

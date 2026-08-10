@@ -1,19 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
-import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCameraPermission } from 'react-native-vision-camera';
+import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 
 import { ERRORS, PERMISSIONS } from '../constants/strings';
 import { checkVietnameseVoice, speak } from '../services/tts';
 
 /**
- * Spoken permission bootstrap for blind users, ported from the legacy
- * CameraScreen flow: announce why a permission is needed, pause so the
- * user can find the system dialog, then request it.
+ * Spoken permission bootstrap for blind users: announce why a permission is
+ * needed, pause so the user can find the system dialog, then request it.
  *
  * Order: microphone first, then camera. Denials are announced but never
  * block the app — `ready` still becomes true so screens can render a
- * degraded state (`cameraGranted` false hides capture UI, `micGranted`
- * false disables voice control — screens decide). ASR is NOT started
- * here; screens own that via the audio session.
+ * degraded state.
+ *
+ * Uses react-native-vision-camera's useCameraPermission hook for camera
+ * and expo-speech-recognition for microphone permission.
  */
 
 interface PermissionBootstrapState {
@@ -23,20 +24,17 @@ interface PermissionBootstrapState {
 }
 
 /** Pause between the spoken explanation and the system permission dialog. */
-const PERMISSION_PROMPT_DELAY_MS = 3000;
+const PERMISSION_PROMPT_DELAY_MS = 3_000;
 
 export function usePermissionBootstrap(): PermissionBootstrapState {
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [micPermission, requestMicPermission] = useMicrophonePermissions();
   const [ready, setReady] = useState(false);
+  const [micGranted, setMicGranted] = useState(false);
+  const cameraPermission = useCameraPermission();
   const hasBootstrappedRef = useRef(false);
   const isCancelledRef = useRef(false);
   const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // Unmount-only cleanup. The bootstrap effect below re-runs whenever a
-  // permission object changes identity (which happens mid-flow after each
-  // request), so clearing timers in that effect's cleanup would kill the
-  // in-flight sequence.
+  // Unmount-only cleanup.
   useEffect(() => {
     return () => {
       isCancelledRef.current = true;
@@ -45,58 +43,46 @@ export function usePermissionBootstrap(): PermissionBootstrapState {
     };
   }, []);
 
-  useEffect(() => {
-    // Wait until both permission hooks hydrate.
-    if (!cameraPermission || !micPermission) {
-      return;
-    }
-    // One-shot latch — later permission updates re-run the effect as no-ops.
-    if (hasBootstrappedRef.current) {
-      return;
-    }
-    hasBootstrappedRef.current = true;
+  const trackedDelay = useCallback((ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      const id = setTimeout(resolve, ms);
+      timeoutIdsRef.current = [...timeoutIdsRef.current, id];
+    }), []);
 
-    const trackedDelay = (ms: number): Promise<void> =>
-      new Promise((resolve) => {
-        const id = setTimeout(resolve, ms);
-        timeoutIdsRef.current = [...timeoutIdsRef.current, id];
-      });
+  useEffect(() => {
+    if (hasBootstrappedRef.current) return;
+    hasBootstrappedRef.current = true;
 
     const runBootstrap = async (): Promise<void> => {
       try {
-        let isMicGranted = micPermission.granted;
-        let isCameraGranted = cameraPermission.granted;
+        // --- Microphone permission ---
+        const micStatus = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+        let isMicGranted = micStatus.granted;
 
         if (!isMicGranted) {
           await speak(PERMISSIONS.MIC_REQUEST);
           await trackedDelay(PERMISSION_PROMPT_DELAY_MS);
-          if (isCancelledRef.current) {
-            return;
-          }
-          const micResult = await requestMicPermission();
+          if (isCancelledRef.current) return;
+          const micResult = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
           isMicGranted = micResult.granted;
         }
         if (!isMicGranted) {
           await speak(PERMISSIONS.MIC_DENIED);
         }
+        setMicGranted(isMicGranted);
 
-        if (!isCameraGranted) {
+        // --- Camera permission ---
+        if (!cameraPermission.hasPermission) {
           await speak(PERMISSIONS.CAMERA_REQUEST);
           await trackedDelay(PERMISSION_PROMPT_DELAY_MS);
-          if (isCancelledRef.current) {
-            return;
-          }
-          const cameraResult = await requestCameraPermission();
-          isCameraGranted = cameraResult.granted;
+          if (isCancelledRef.current) return;
+          await cameraPermission.requestPermission();
         }
 
-        if (isCancelledRef.current) {
-          return;
-        }
-        // Flow complete — app is usable even when degraded.
+        if (isCancelledRef.current) return;
         setReady(true);
 
-        if (!isCameraGranted) {
+        if (!cameraPermission.hasPermission) {
           await speak(PERMISSIONS.CAMERA_DENIED);
           return;
         }
@@ -115,11 +101,8 @@ export function usePermissionBootstrap(): PermissionBootstrapState {
     };
 
     void runBootstrap();
-  }, [cameraPermission, micPermission, requestCameraPermission, requestMicPermission]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  return {
-    ready,
-    cameraGranted: cameraPermission?.granted ?? false,
-    micGranted: micPermission?.granted ?? false,
-  };
+  return { ready, cameraGranted: cameraPermission.hasPermission, micGranted };
 }

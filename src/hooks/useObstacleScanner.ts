@@ -1,20 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
-import type { RefObject } from 'react';
-import type { CameraView } from 'expo-camera';
-import { useObjectDetection } from '@infinitered/react-native-mlkit-object-detection';
-import type { ObjectDetectionConfig } from '@infinitered/react-native-mlkit-object-detection';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CameraPhotoOutput } from 'react-native-vision-camera';
 
-import { OBSTACLE_SCAN_INTERVAL_MS } from '../constants/config';
+import {
+  OBSTACLE_ASSESSMENT_THROTTLE_MS,
+} from '../constants/config';
 import { OBSTACLE } from '../constants/strings';
 import { speakExclusive } from '../services/audioSession';
 import { hapticForSeverity, playDanger } from '../services/feedback';
-import { captureFrameForDetection, deleteFrameFile } from '../services/imagePipeline';
 import { logMetric, nextFrameId } from '../services/metrics';
 import {
   assessDetections,
   createAnnouncementPolicy,
 } from '../services/obstacleDetector';
 import type { AnnouncementPolicy, Assessment } from '../services/obstacleDetector';
+import { detectFromPhoto, getTfliteModel } from '../services/tfliteDetector';
 import { useSettings } from '../state/SettingsContext';
 
 interface UseObstacleScannerOptions {
@@ -27,7 +26,6 @@ interface UseObstacleScannerResult {
 
 /**
  * Announces an assessment over the half-duplex audio session.
- * Severity decides the channel mix (sound + haptic + speech).
  */
 async function announceAssessment(assessment: Assessment): Promise<void> {
   if (assessment.severity === 'danger') {
@@ -49,93 +47,72 @@ async function announceAssessment(assessment: Assessment): Promise<void> {
 }
 
 /**
- * Self-scheduling obstacle-scan loop.
+ * Interval-based obstacle scanner using VisionCamera v5 + TFLite.
  *
- * While `opts.active` is true and the ML Kit default model is loaded, each
- * cycle: captures a low-quality frame → runs on-device object detection →
- * assesses severity → publishes the latest Assessment, and announces it when
- * the announcement policy allows. Cycles never overlap — the next cycle is
- * scheduled only after the current one finishes, delayed by
- * max(0, OBSTACLE_SCAN_INTERVAL_MS - elapsed). A failed cycle logs a warning
- * and the loop continues.
+ * While `opts.active` is true, captures a photo every ~900ms from the
+ * `photoOutput`, extracts raw pixels via Photo.getPixelBuffer(),
+ * runs EfficientDet-Lite0 inference, and assesses severity.
  *
- * Requires the ObjectDetectionProvider (built in App.tsx from
- * useObjectDetectionModels({ loadDefaultModel: true, ... }) +
- * useObjectDetectionProvider) to be mounted above this hook's component —
- * useObjectDetection throws without it.
+ * setPhotoOutput() must be called when the camera is ready (from
+ * CameraViewport's onPhotoOutputReady callback).
  */
 export function useObstacleScanner(
-  cameraRef: RefObject<CameraView | null>,
   opts: UseObstacleScannerOptions,
-): UseObstacleScannerResult {
+): UseObstacleScannerResult & {
+  setPhotoOutput: (output: CameraPhotoOutput) => void;
+} {
   const { active } = opts;
   const { settings } = useSettings();
-  const detector = useObjectDetection<ObjectDetectionConfig>('default');
 
   const [assessment, setAssessment] = useState<Assessment | null>(null);
 
+  const photoOutputRef = useRef<CameraPhotoOutput | null>(null);
   const policyRef = useRef<AnnouncementPolicy | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /**
-   * Cancellation flag for the current run: a cycle whose captured token no
-   * longer matches this ref is cancelled. Per-run tokens (instead of a shared
-   * boolean) guarantee an in-flight cycle from a previous activation can never
-   * resume and create a second, overlapping loop.
-   */
-  const runTokenRef = useRef<symbol | null>(null);
+  const isCyclingRef = useRef(false);
   const sensitivityRef = useRef(settings.obstacleSensitivity);
 
-  // Keep the latest sensitivity visible to in-flight cycles without
-  // restarting the loop (a restart would reset the announcement cooldowns).
   useEffect(() => {
     sensitivityRef.current = settings.obstacleSensitivity;
   }, [settings.obstacleSensitivity]);
 
+  const setPhotoOutput = useCallback((output: CameraPhotoOutput) => {
+    photoOutputRef.current = output;
+  }, []);
+
   useEffect(() => {
-    if (!active || detector === undefined) {
+    if (!active) {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      isCyclingRef.current = false;
       return undefined;
     }
 
-    const runToken = Symbol('obstacle-scan-run');
-    runTokenRef.current = runToken;
     policyRef.current = createAnnouncementPolicy();
     setAssessment(null);
-
-    const isCancelled = (): boolean => runTokenRef.current !== runToken;
-
-    const scheduleNext = (cycleStartMs: number): void => {
-      if (isCancelled()) {
-        return;
-      }
-      const elapsedMs = Date.now() - cycleStartMs;
-      timerRef.current = setTimeout(() => {
-        void cycle();
-      }, Math.max(0, OBSTACLE_SCAN_INTERVAL_MS - elapsedMs));
-    };
+    isCyclingRef.current = true;
 
     const cycle = async (): Promise<void> => {
-      if (isCancelled()) {
+      if (!isCyclingRef.current) return;
+
+      const output = photoOutputRef.current;
+      const model = getTfliteModel();
+      if (output === null || model === null) {
+        scheduleNext();
         return;
       }
-      const startMs = Date.now();
-      let frameUri: string | null = null;
-      let hadError = false;
+
+      let photo = null;
       try {
-        const camera = cameraRef.current;
-        if (camera === null) {
-          hadError = true;
-          return; // Camera chưa gắn xong — finally vẫn hẹn chu kỳ kế tiếp.
-        }
-
-        const frame = await captureFrameForDetection(camera);
-        frameUri = frame.uri;
-        const objects = await detector.detectObjects(frame.uri);
-        if (isCancelled()) {
-          return;
-        }
-
-        const detectMs = Date.now() - startMs;
         const frameId = nextFrameId();
+        const start = Date.now();
+
+        photo = await output.capturePhoto({}, {});
+        const objects = detectFromPhoto(photo);
+        const detectMs = Date.now() - start;
+
         logMetric({
           event: 'obstacle_frame',
           frameId,
@@ -145,7 +122,7 @@ export function useObstacleScanner(
 
         const result = assessDetections(
           objects,
-          { width: frame.width, height: frame.height },
+          { width: photo.width, height: photo.height },
           sensitivityRef.current,
         );
         setAssessment(result);
@@ -161,43 +138,35 @@ export function useObstacleScanner(
               label: result.label,
             });
           }
-          await announceAssessment(result);
+          void announceAssessment(result);
         }
       } catch (err) {
-        hadError = true;
-        // Một khung hình lỗi không được làm chết vòng quét — cảnh báo rồi quét tiếp.
-        // Không log khi đã cancel (camera unmount khi thoát screen).
-        if (!isCancelled()) {
-          console.warn('Lỗi khi quét vật cản:', err);
-        }
+        console.warn('Lỗi khi quét vật cản:', err);
       } finally {
-        if (frameUri !== null) {
-          void deleteFrameFile(frameUri);
-        }
-        if (isCancelled()) {
-          return;
-        }
-        // Lỗi hoặc camera chưa sẵn sàng → chờ đủ 1 chu kỳ thay vì retry ngay.
-        if (hadError) {
-          timerRef.current = setTimeout(() => {
-            void cycle();
-          }, OBSTACLE_SCAN_INTERVAL_MS);
-        } else {
-          scheduleNext(startMs);
-        }
+        photo?.dispose();
+        scheduleNext();
       }
     };
 
+    const scheduleNext = (): void => {
+      if (!isCyclingRef.current) return;
+      timerRef.current = setTimeout(() => void cycle(), OBSTACLE_ASSESSMENT_THROTTLE_MS);
+    };
+
+    // Bắt đầu cycle đầu tiên
     void cycle();
 
     return () => {
-      runTokenRef.current = null;
+      isCyclingRef.current = false;
       if (timerRef.current !== null) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
     };
-  }, [active, detector, cameraRef]);
+  }, [active]);
 
-  return { assessment };
+  return {
+    assessment,
+    setPhotoOutput,
+  };
 }
