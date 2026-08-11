@@ -37,15 +37,15 @@ ul { padding-left: 22px; }
 <ul>
   <li><strong>Mô tả ảnh</strong> — chụp (nút, giọng nói, phím âm lượng) hoặc chọn từ gallery → gửi Gemini → đọc caption bằng TTS.</li>
   <li><strong>Hỏi đáp về ảnh</strong> — chat multi-turn với Gemini về ảnh vừa chụp, điều khiển hoàn toàn bằng giọng nói + push-to-talk.</li>
-  <li><strong>Dò vật cản</strong> — vòng lặp quét real-time bằng MLKit object detection <em>on-device</em>, cảnh báo theo mức độ (safe/warning/danger).</li>
+  <li><strong>Dò vật cản</strong> — vòng lặp quét real-time bằng TFLite (EfficientDet-Lite0) object detection <em>on-device</em>, cảnh báo theo mức độ (safe/warning/danger).</li>
 </ul>
-<p>Stack: Expo SDK 54 (new architecture, <code>expo-dev-client</code> — không chạy được trên Expo Go vì có native module Firebase + MLKit), React Native 0.81.5, React 19.1.0, TypeScript 5.9 strict, React Navigation native-stack (4 màn hình), Firebase AI Logic (<code>@react-native-firebase/ai</code>) gọi Gemini kèm App Check, jest-expo cho unit test (<code>src/services/__tests__</code>, <code>src/state/__tests__</code>). Không có Redux/Zustand — state duy nhất là <code>SettingsContext</code> + <code>useReducer</code> trong <code>captureMachine.ts</code>.</p>
+<p>Stack: Expo SDK 56 (new architecture, <code>expo-dev-client</code> — không chạy được trên Expo Go vì có native module Firebase + VisionCamera + TFLite), React Native 0.85.3, React 19.2.3, TypeScript 6.0 strict, React Navigation native-stack (4 màn hình), Firebase AI Logic (<code>@react-native-firebase/ai</code>) gọi Gemini kèm App Check, jest-expo cho unit test (<code>src/services/__tests__</code>, <code>src/state/__tests__</code>). Không có Redux/Zustand — state duy nhất là <code>SettingsContext</code> + <code>useReducer</code> trong <code>captureMachine.ts</code>.</p>
 <table border="1">
   <tr><th>Package</th><th>Version</th><th>Lý do pin</th></tr>
-  <tr><td><code>react-native</code> / <code>react</code></td><td>0.81.5 / 19.1.0 (exact)</td><td>Cặp version Expo SDK 54 yêu cầu — lệch là vỡ native build.</td></tr>
+  <tr><td><code>react-native</code> / <code>react</code></td><td>0.85.3 / 19.2.3 (exact)</td><td>Cặp version Expo SDK 56 yêu cầu — lệch là vỡ native build.</td></tr>
   <tr><td><code>@react-native-firebase/app</code>, <code>app-check</code>, <code>ai</code></td><td>23.8.8 (exact)</td><td>3 gói RNFB bắt buộc cùng version. Kiểu <code>AIOptions.appCheck</code> (nhận <code>AppCheck | null</code>) được check theo đúng 23.8.8 — có comment trong <code>gemini.ts</code>.</td></tr>
-  <tr><td><code>@infinitered/react-native-mlkit-object-detection</code></td><td>5.0.0 (exact)</td><td>Native module; API hook (<code>useObjectDetectionModels</code>/<code>Provider</code>) đổi theo minor. Pin cứng để prebuild ổn định.</td></tr>
-  <tr><td><code>@react-native-async-storage/async-storage</code></td><td>2.2.0 (exact)</td><td>Bản Expo 54 expect (<code>npx expo install</code> chốt); dùng cho persist Settings.</td></tr>
+  <tr><td><code>react-native-fast-tflite</code></td><td>3.0.1</td><td>Chạy mô hình TFLite (EfficientDet-Lite0, 80 COCO classes) on-device qua NitroModules.</td></tr>
+  <tr><td><code>@react-native-async-storage/async-storage</code></td><td>2.2.0 (exact)</td><td>Bản Expo 56 expect (<code>npx expo install</code> chốt); dùng cho persist Settings.</td></tr>
   <tr><td><code>expo-speech-recognition</code></td><td>^3.1.3</td><td>Community package, theo semver; cần config plugin trong <code>app.json</code>.</td></tr>
   <tr><td><code>react-native-volume-manager</code></td><td>^2.0.8</td><td>Bắt phím âm lượng làm nút chụp/PTT.</td></tr>
   <tr><td><code>expo-audio</code></td><td>~1.1.1</td><td>Thay <code>expo-av</code> (deprecated) — <code>feedback.ts</code> dùng <code>createAudioPlayer</code>.</td></tr>
@@ -55,7 +55,7 @@ ul { padding-left: 22px; }
 <pre>
 ┌──────────────────────────── App.tsx ────────────────────────────┐
 │ initTts() · initFirebase() · SettingsProvider                   │
-│ useObjectDetectionModels ─→ ObjectDetectionProvider (MLKit)     │
+│ loadTensorflowModel ─→ TFLite EfficientDet-Lite0 (on-device)     │
 │ NavigationContainer ─→ RootNavigator (native-stack, no header)  │
 └─────────────────────────────────────────────────────────────────┘
         │ src/screens/
@@ -73,7 +73,7 @@ ul { padding-left: 22px; }
         ▼ CLOUD                                    ▼ ON-DEVICE
   gemini.ts ─→ Firebase AI Logic             obstacleDetector.ts
   (gemini-3.6-flash,                         (pure logic, nhận kết quả
-   fallback gemini-3.1-flash-lite)            MLKit từ useObstacleScanner)
+   fallback gemini-3.1-flash-lite)            TFLite từ useObstacleScanner)
 </pre>
 <p><strong>Chỗ đứng của <code>audioSession.ts</code></strong>: đây là module DUY NHẤT được đụng cả ASR lẫn TTS (xem <a href="#half-duplex">bất biến half-duplex</a>). Màn hình muốn nói → <code>speakExclusive()</code>; muốn nghe → <code>startListening()</code>/<code>stopListening()</code>; Q&A đóng băng mic khi chờ Gemini bằng <code>setSuspended()</code>. Duy nhất <code>tts.stop()</code> được gọi thẳng từ ngoài (barge-in, cleanup).</p>
 
@@ -83,7 +83,7 @@ ul { padding-left: 22px; }
 <ol>
   <li>Trigger: nói "chụp ảnh" (<code>useVoiceControl</code> → <code>voiceIntents.ts:parseIntent</code>), phím âm lượng (<code>useVolumeButtonPTT</code>), nút shutter, hoặc gallery. 3 trigger đầu đi qua <code>HomeCameraScreen.tsx:captureFlow</code> → <code>useDebounceCallback</code> (leading-edge, <code>CAPTURE_DEBOUNCE_MS = 2000</code>).</li>
   <li><code>runCaptureFlow</code>: <code>hapticCapture()</code> + <code>playShutter()</code>, <code>dispatch('CAPTURE_START')</code> — state machine <code>captureMachine.ts</code> đi idle → capturing (chỉ chụp được khi <code>canCapture</code>, tức idle).</li>
-  <li><code>imagePipeline.ts:captureAndPrepare</code>: <code>takePictureAsync({ quality: 0.4 })</code> → <code>prepareFromUri</code>: resize width 800, compress 0.5, JPEG + base64 → <code>PreparedImage</code>. Gallery đi thẳng <code>prepareFromUri(pickedUri)</code>.</li>
+  <li><code>imagePipeline.ts:captureAndPrepare</code>: <code>photoOutput.capturePhoto({ enableShutterSound: false })</code> → <code>photo.saveToTemporaryFileAsync()</code> → <code>prepareFromUri</code>: resize width 800, compress 0.5, JPEG + base64 → <code>PreparedImage</code>. Gallery đi thẳng <code>prepareFromUri(pickedUri)</code>.</li>
   <li><code>analyzeAndSpeak</code>: <code>dispatch('ANALYZE_START')</code>, đọc <code>CAPTURE.ANALYZING</code> (không await), rồi <code>gemini.ts:describeImage(image, captureId)</code> — <code>generateContent([imagePart, DESCRIBE_PROMPT])</code>; quota/404 thì <code>describeWithFallback</code> thử lại bằng <code>GEMINI_FALLBACK_MODEL</code>.</li>
   <li><code>dispatch('SPEAK_START')</code> → <code>await audioSession.speakExclusive(description)</code> → <code>dispatch('DONE')</code>.</li>
   <li>Giữ result: <code>setLastImage</code>/<code>setLastDescription</code> → <code>hasResult = true</code> → render màn kết quả (<code>CaptionPanel</code> + 3 nút: hỏi về ảnh / chụp mới / đọc lại), đọc <code>CAPTURE.RESULT_HINT</code>. Ở màn kết quả, lệnh "chụp" chạy <code>handleNewCapture</code> (xoá result, quay về camera) chứ KHÔNG chụp ngay.</li>
@@ -105,8 +105,8 @@ ul { padding-left: 22px; }
 <h3>3. Vòng lặp vật cản</h3>
 <ol>
   <li><code>ObstacleModeScreen</code>: <code>useKeepAwake()</code>, đọc <code>NAV.OBSTACLE</code>; <code>useObstacleScanner(cameraRef, { active: isFocused })</code> — blur là vòng quét dừng hẳn.</li>
-  <li>Mỗi <code>cycle()</code>: <code>imagePipeline.ts:captureFrameForDetection</code> — <code>takePictureAsync({ quality: 0.2, skipProcessing: true, shutterSound: false })</code>.</li>
-  <li><code>detector.detectObjects(frame.uri)</code> — MLKit on-device, detector 'default' lấy từ <code>ObjectDetectionProvider</code> đã mount ở <code>App.tsx</code>.</li>
+  <li>Mỗi <code>cycle()</code>: <code>photoOutput.capturePhoto({ enableShutterSound: false })</code> → <code>detectFromPhoto(photo)</code> — pixel buffer BGRA→RGB resize 320×320 → TFLite <code>model.runSync()</code>.</li>
+  <li><code>detectFromPhoto(photo)</code> — TFLite on-device, model EfficientDet-Lite0 loaded qua <code>loadTensorflowModel</code>.</li>
   <li><code>obstacleDetector.ts:assessDetections(objects, frameSize, sensitivity)</code>: lọc score ≥ <code>OBSTACLE_SCORE_MIN</code> (0.35, labels rỗng tính score 1), tâm bbox phải nằm trong dải giữa <code>CENTER_BAND_WIDTH_RATIO[sensitivity]</code>; severity theo areaRatio: danger ≥ 0.35, warning ≥ 0.18.</li>
   <li><code>createAnnouncementPolicy().shouldAnnounce(result, now)</code>: cooldown danger 2000ms / warning 3000ms (<code>ANNOUNCE_COOLDOWN_MS</code>), leo thang LÊN danger bỏ qua cooldown, safe chỉ đọc đúng lúc transition vào safe.</li>
   <li><code>announceAssessment</code> (trong <code>useObstacleScanner.ts</code>): danger = <code>playDanger</code> + haptic + <code>speakExclusive(OBSTACLE.DANGER, { flush: true })</code>; warning kèm label tiếng Việt nếu map được qua <code>OBSTACLE.LABEL_VI</code>.</li>
@@ -118,7 +118,7 @@ ul { padding-left: 22px; }
 <ol>
   <li><code>App.tsx</code> useEffect: <code>tts.ts:initTts()</code> — đọc + theo dõi trạng thái screen reader (TalkBack/VoiceOver) qua <code>AccessibilityInfo</code>; singleton trọn đời, không teardown. Đang bật screen reader thì <code>speak()</code> route qua <code>announceForAccessibility</code> thay vì expo-speech.</li>
   <li><code>firebase.ts:initFirebase()</code> — chỉ lo App Check: provider 'debug' khi <code>__DEV__</code>, 'playIntegrity' (Android) / 'appAttestWithDeviceCheckFallback' (iOS) khi prod. Fail thì warn và app vẫn boot; instance được <code>gemini.ts:getAiInstance</code> lấy qua <code>getAppCheckInstance()</code>.</li>
-  <li><code>DetectionRoot</code>: <code>useObjectDetectionModels({ loadDefaultModel: true, defaultModelOptions: DEFAULT_DETECTOR_OPTIONS })</code> → <code>useObjectDetectionProvider</code> bọc <code>NavigationContainer</code>. Chú ý: options phải là const module-level — object mới mỗi render sẽ làm model nạp lại liên tục (options nằm trong deps của lib).</li>
+  <li><code>DetectionRoot</code>: <code>loadTensorflowModel()</code> nạp file <code>efficientdet_lite0.tflite</code> vào bộ nhớ. Model ref được truyền qua context cho <code>useObstacleScanner</code>. Chú ý: model chỉ nạp một lần khi mount, không nạp lại mỗi render.</li>
   <li><code>RootNavigator</code>: <code>initialRouteName="HomeCamera"</code>, <code>headerShown: false</code>, <code>animation: 'none'</code>.</li>
   <li><code>HomeCameraScreen</code> → <code>usePermissionBootstrap</code>: <strong>nói TRƯỚC khi xin quyền</strong> — <code>speak(PERMISSIONS.MIC_REQUEST)</code> → chờ <code>PERMISSION_PROMPT_DELAY_MS = 3000</code> (cho user kịp định vị dialog hệ thống) → <code>requestMicPermission()</code>; camera lặp lại tương tự (mic trước, camera sau). Từ chối KHÔNG block: <code>ready</code> vẫn true, app chạy degraded.</li>
   <li><code>ready</code> → đọc <code>PERMISSIONS.WELCOME</code>, <code>checkVietnameseVoice()</code> cảnh báo nếu máy thiếu giọng vi; screen effect chạy <code>focusNow()</code> + <code>announceScreen(NAV.HOME)</code> + <code>speakExclusive(NAV.HOME)</code>.</li>
@@ -226,7 +226,7 @@ Chỉ restart khi <code>wantListening && !isSuspended && !isSpeaking</code>.</li
 </ul>
 
 <h3>obstacleDetector.ts — logic vật cản thuần</h3>
-<p>Pure logic (không React/Expo import). Type <code>DetectedObject</code> là structural alias của <code>@infinitered/react-native-mlkit-object-detection</code> (<code>size.x</code> = width, <code>size.y</code> = height).</p>
+<p>Pure logic (không React/Expo import). Type <code>DetectedObject</code> là structural alias tương thích với output của TFLite EfficientDet-Lite0 (<code>originX</code>, <code>originY</code>, <code>width</code>, <code>height</code>, <code>label</code>, <code>score</code>).</p>
 <table border=1>
 <tr><th>Export</th><th>Chữ ký</th><th>Hành vi</th></tr>
 <tr><td><code>assessDetections</code></td><td><code>(objects, frame: FrameSize, sensitivity) =&gt; Assessment</code></td><td>Lọc + chấm mức độ 1 frame; trả <code>{severity, label, areaRatio}</code></td></tr>
@@ -252,12 +252,12 @@ Chỉ restart khi <code>wantListening && !isSuspended && !isSpeaking</code>.</li
 <tr><td><code>selectPictureSize</code></td><td><code>(camera: CameraView) =&gt; Promise&lt;string | undefined&gt;</code></td><td>Chọn size 'WxH' có cạnh dài gần <code>TARGET_PICTURE_SIZE</code> (1280) nhất</td></tr>
 <tr><td><code>prepareFromUri</code></td><td><code>(uri: string) =&gt; Promise&lt;PreparedImage&gt;</code></td><td>Resize + nén + base64 (ảnh gallery hoặc vừa chụp)</td></tr>
 <tr><td><code>captureAndPrepare</code></td><td><code>(camera: CameraView) =&gt; Promise&lt;PreparedImage&gt;</code></td><td>Chụp rồi gọi <code>prepareFromUri</code></td></tr>
-<tr><td><code>captureFrameForDetection</code></td><td><code>(camera) =&gt; Promise&lt;{uri, width, height}&gt;</code></td><td>Chụp nhanh frame thấp cho ML Kit, không âm thanh</td></tr>
+<tr><td><code>captureFrameForDetection</code></td><td><code>(photoOutput) =&gt; Promise&lt;{uri, width, height}&gt;</code></td><td>Chụp nhanh frame cho TFLite detection, enableShutterSound: false</td></tr>
 <tr><td><code>deleteFrameFile</code></td><td><code>(uri: string) =&gt; Promise&lt;void&gt;</code></td><td>Xoá frame tạm — best-effort, nuốt lỗi</td></tr>
 </table>
 <p><b>Hai đường đi khác nhau</b>:</p>
 <table border=1>
-<tr><th></th><th>Describe (gửi Gemini)</th><th>Obstacle detection (ML Kit local)</th></tr>
+<tr><th></th><th>Describe (gửi Gemini)</th><th>Obstacle detection (TFLite local)</th></tr>
 <tr><td>quality chụp</td><td><code>CAPTURE_QUALITY</code> = 0.4</td><td><code>DETECTION_FRAME_QUALITY</code> = 0.2</td></tr>
 <tr><td>xử lý</td><td>resize width 800 (<code>IMAGE_RESIZE_WIDTH</code>), compress 0.5 (<code>IMAGE_COMPRESS</code>), JPEG + base64</td><td><code>skipProcessing: true</code>, <code>shutterSound: false</code>, không resize</td></tr>
 <tr><td>dọn dẹp</td><td>—</td><td>caller phải gọi <code>deleteFrameFile</code> (frame ~1s/lần, không xoá là đầy disk)</td></tr>
@@ -338,8 +338,8 @@ Chỉ restart khi <code>wantListening && !isSuspended && !isSpeaking</code>.</li
     <td><code>useObstacleScanner</code></td>
     <td><code>(cameraRef: RefObject&lt;CameraView|null&gt;, opts: {active}) =&gt; {assessment}</code></td>
     <td>Obstacle</td>
-    <td>Vòng quét tự lên lịch: chụp frame → ML Kit detect → <code>assessDetections</code> → publish <code>Assessment</code> + announce theo policy. Chu kỳ kế = <code>max(0, OBSTACLE_SCAN_INTERVAL_MS − elapsed)</code> (900ms), không bao giờ overlap.</td>
-    <td><code>runTokenRef</code> giữ <code>Symbol</code> per-run chống <b>zombie cycle</b>: cycle in-flight của activation cũ thấy token lệch là chết, không tạo được loop thứ hai. <code>sensitivityRef</code> nhận setting mới mà không restart loop (restart reset cooldown announce). Cần <code>ObjectDetectionProvider</code> mount ở <code>App.tsx</code>, thiếu là <code>useObjectDetection</code> throw.</td>
+    <td>Vòng quét tự lên lịch: chụp frame → TFLite detect → <code>assessDetections</code> → publish <code>Assessment</code> + announce theo policy. Chu kỳ kế = <code>max(0, OBSTACLE_SCAN_INTERVAL_MS − elapsed)</code> (900ms), không bao giờ overlap.</td>
+    <td><code>runTokenRef</code> giữ <code>Symbol</code> per-run chống <b>zombie cycle</b>: cycle in-flight của activation cũ thấy token lệch là chết, không tạo được loop thứ hai. <code>sensitivityRef</code> nhận setting mới mà không restart loop (restart reset cooldown announce). Cần model TFLite đã load thành công, thiếu thì scanner return sớm.</td>
   </tr>
   <tr>
     <td><code>useVoiceControl</code></td>
@@ -506,7 +506,7 @@ Chỉ restart khi <code>wantListening && !isSuspended && !isSpeaking</code>.</li
   <li><code>KEYWORDS</code> — từ khoá voice intent (bảng dưới).</li>
   <li><code>NAV</code> — lời dẫn khi vào mỗi màn, đọc bằng TTS + <code>announceScreen</code>.</li>
   <li><code>STATE</code>, <code>CAPTURE</code>, <code>HOME</code>, <code>QA</code>, <code>OBSTACLE</code>, <code>SETTINGS</code>, <code>SCREEN_TITLES</code>, <code>PERMISSIONS</code> — chuỗi theo màn; vài entry là hàm template (<code>QA.TURN_USER(text)</code>, <code>OBSTACLE.WARNING_WITH_LABEL(label)</code>).</li>
-  <li><code>OBSTACLE.LABEL_VI</code> — map nhãn ML Kit Anh → Việt (person→người, chair→ghế…).</li>
+  <li><code>COCO_LABEL_VI</code> — map 80 nhãn COCO Anh → Việt (person→người, chair→ghế, backpack→ba lô…).</li>
   <li><code>ERRORS</code> — key thường (<code>network</code>/<code>blocked</code>/<code>quota</code>/<code>unknown</code>) khớp đúng <code>GeminiError.kind</code> để tra <code>ERRORS[err.kind]</code>; key HOA (<code>NO_VI_VOICE</code>, <code>GALLERY</code>) là lỗi rời.</li>
 </ul>
 
@@ -538,12 +538,12 @@ Chỉ restart khi <code>wantListening && !isSuspended && !isSpeaking</code>.</li
 </ul>
 <h2 id="setup">Setup từ clone</h2>
 
-<p>Repo dùng <strong>Expo dev client</strong> (native module: RNFB, ML Kit, expo-speech-recognition) — <strong>Expo Go không chạy được</strong>. Bắt buộc build native ít nhất một lần. Branch làm việc: <code>feature/rebuild-v2</code>.</p>
+<p>Repo dùng <strong>Expo dev client</strong> (native module: RNFB, VisionCamera, TFLite, expo-speech-recognition) — <strong>Expo Go không chạy được</strong>. Bắt buộc build native ít nhất một lần. Branch làm việc: <code>feature/rebuild-v2</code>.</p>
 
 <ol>
   <li><code>yarn install</code> — <code>node_modules/</code> không được commit.</li>
   <li>Đặt <strong>2 file config Firebase vào repo root</strong>: <code>google-services.json</code> (Android) và <code>GoogleService-Info.plist</code> (iOS). Cả hai đều <strong>gitignored</strong> (chứa API key — xem <code>.gitignore</code>). Nếu mất, tải lại bằng Firebase MCP tool <code>firebase_get_sdk_config</code> trên project <code>visionvoice-app-2026</code> (hoặc Firebase console → Project settings → tải file config của từng app). <code>app.json</code> đã trỏ sẵn qua <code>googleServicesFile</code>.</li>
-  <li><code>npx expo prebuild --clean</code> — sinh lại <code>/android</code> và <code>/ios</code> (cả hai gitignored). Bước này copy file Firebase config vào native project và apply plugin (<code>expo-camera</code>, <code>expo-speech-recognition</code>, <code>@react-native-firebase/app</code>, <code>@react-native-firebase/app-check</code>, <code>expo-build-properties</code>).</li>
+  <li><code>npx expo prebuild --clean</code> — sinh lại <code>/android</code> và <code>/ios</code> (cả hai gitignored). Bước này copy file Firebase config vào native project và apply plugin (<code>react-native-vision-camera</code>, <code>expo-speech-recognition</code>, <code>@react-native-firebase/app</code>, <code>@react-native-firebase/app-check</code>, <code>expo-build-properties</code>).</li>
   <li><code>yarn android</code> hoặc <code>yarn ios</code> (= <code>expo run:*</code>) — build và cài dev client lên máy thật. Test trên máy thật vì cần camera + mic.</li>
   <li><strong>Đăng ký App Check debug token</strong> (bước hay quên nhất):
     <ul>
@@ -618,13 +618,13 @@ Chỉ restart khi <code>wantListening && !isSuspended && !isSpeaking</code>.</li
   </tr>
   <tr>
     <td>Quét app bằng Expo Go → crash/không load</td>
-    <td>Native module (RNFB, ML Kit) không có trong Expo Go</td>
+    <td>Native module (RNFB, VisionCamera, TFLite) không có trong Expo Go</td>
     <td>Dùng dev client: <code>yarn android</code> / <code>yarn ios</code>, sau đó <code>yarn start</code> chỉ để reload JS</td>
   </tr>
   <tr>
     <td>Vào Obstacle mode nhưng scanner đứng im, không quét</td>
-    <td>Model ML Kit default chưa load xong — <code>useObjectDetection('default')</code> trả <code>undefined</code>, effect trong <code>useObstacleScanner.ts</code> return sớm</td>
-    <td>Bình thường: chờ vài giây, effect tự chạy lại khi <code>detector</code> có giá trị. Nếu mãi không load, kiểm tra <code>ObjectDetectionProvider</code> trong <code>App.tsx</code> còn bọc ngoài navigator không</td>
+    <td>Model TFLite chưa load xong — <code>loadTensorflowModel</code> trả <code>undefined</code>, effect trong <code>useObstacleScanner.ts</code> return sớm</td>
+    <td>Bình thường: chờ vài giây, effect tự chạy lại khi model TFLite load xong. Nếu mãi không load, kiểm tra file <code>efficientdet_lite0.tflite</code> có trong <code>assets/models/</code> và metro config có cấu hình asset extension <code>.tflite</code> không</td>
   </tr>
   <tr>
     <td>Cache đầy dần khi chạy obstacle mode lâu</td>
