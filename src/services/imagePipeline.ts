@@ -43,7 +43,7 @@ export async function prepareFromUri(uri: string): Promise<PreparedImage> {
  * để lấy file path.
  */
 export async function captureAndPrepare(photoOutput: CameraPhotoOutput): Promise<PreparedImage> {
-  const photo: Photo = await photoOutput.capturePhoto({}, {});
+  const photo: Photo = await photoOutput.capturePhoto({ enableShutterSound: false }, {});
   const tempPath = await photo.saveToTemporaryFileAsync();
   const uri = tempPath.startsWith('file://') ? tempPath : `file://${tempPath}`;
   photo.dispose();
@@ -58,7 +58,7 @@ export async function captureAndPrepare(photoOutput: CameraPhotoOutput): Promise
 export async function captureFrameForDetection(
   photoOutput: CameraPhotoOutput,
 ): Promise<{ uri: string; width: number; height: number }> {
-  const photo: Photo = await photoOutput.capturePhoto({}, {});
+  const photo: Photo = await photoOutput.capturePhoto({ enableShutterSound: false }, {});
   const tempPath = await photo.saveToTemporaryFileAsync();
   const uri = tempPath.startsWith('file://') ? tempPath : `file://${tempPath}`;
   const width = photo.width;

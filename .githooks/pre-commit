@@ -1,0 +1,12 @@
+#!/bin/bash
+MEMORY_STAGED=$(git diff --cached --name-only -- 'memory/*.md' 2>/dev/null)
+if [ -z "$MEMORY_STAGED" ]; then exit 0; fi
+echo "🔍 Validating memory files..."
+if [ -f "memory/validate.sh" ]; then
+  bash memory/validate.sh
+  if [ $? -ne 0 ]; then
+    echo "❌ Memory validation failed. Fix errors before committing."
+    exit 1
+  fi
+fi
+exit 0

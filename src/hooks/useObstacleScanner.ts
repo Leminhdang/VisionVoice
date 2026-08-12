@@ -109,7 +109,7 @@ export function useObstacleScanner(
         const frameId = nextFrameId();
         const start = Date.now();
 
-        photo = await output.capturePhoto({}, {});
+        photo = await output.capturePhoto({ enableShutterSound: false }, {});
         const objects = detectFromPhoto(photo);
         const detectMs = Date.now() - start;
 
