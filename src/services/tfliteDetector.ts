@@ -47,6 +47,12 @@ export function getTfliteModel(): TfliteModel | null {
  *
  * Photo.getPixelBuffer() trả về BGRA trên iOS, RGBA trên Android.
  * Hàm này xử lý cả hai trường hợp + resize bằng nearest-neighbor.
+ *
+ * Số byte mỗi dòng được SUY RA TỪ KÍCH THƯỚC BUFFER THẬT chứ không lấy
+ * width × 4: pixel buffer của camera thường được đệm để căn biên (16/64 byte),
+ * và nếu bỏ qua phần đệm thì mỗi dòng lệch dần sang phải, ảnh bị xé chéo và
+ * model không nhận ra gì — biểu hiện y hệt "không có vật cản nào".
+ * Photo (khác Frame) không phơi ra bytesPerRow nên phải tính lấy.
  */
 function preprocessPixelBuffer(
   pixelData: ArrayBuffer,
@@ -65,12 +71,18 @@ function preprocessPixelBuffer(
   const bOff = isIOS ? 0 : 2;
 
   const srcBytesPerPixel = 4; // BGRA/RGBA = 4 bytes
+  const minBytesPerRow = srcWidth * srcBytesPerPixel;
+  const derivedBytesPerRow = Math.floor(src.length / srcHeight);
+  // Buffer dị thường (nhỏ hơn cả một dòng không đệm) thì quay về giả định cũ.
+  const bytesPerRow =
+    derivedBytesPerRow >= minBytesPerRow ? derivedBytesPerRow : minBytesPerRow;
 
   for (let y = 0; y < size; y++) {
     const srcY = Math.floor((y * srcHeight) / size);
+    const rowStart = srcY * bytesPerRow;
     for (let x = 0; x < size; x++) {
       const srcX = Math.floor((x * srcWidth) / size);
-      const srcIdx = (srcY * srcWidth + srcX) * srcBytesPerPixel;
+      const srcIdx = rowStart + srcX * srcBytesPerPixel;
       const dstIdx = (y * size + x) * 3;
 
       dst[dstIdx] = src[srcIdx + rOff];
@@ -87,7 +99,7 @@ function preprocessPixelBuffer(
  *
  * Output format (4 tensors):
  * - [0] locations: [1, N, 4] float32 — normalized [top, left, bottom, right]
- * - [1] classes: [1, N] float32 — class indices (0-based)
+ * - [1] classes: [1, N] float32 — chỉ số tra thẳng vào COCO_LABELS (90 phần tử)
  * - [2] scores: [1, N] float32 — confidence scores
  * - [3] num_detections: [1] float32 — number of valid detections
  */
@@ -121,11 +133,15 @@ function parseDetections(
     const h = (bottom - top) * frameHeight;
 
     const classIndex = Math.round(classes[i]);
+    // Class index ngoài bảng COCO vẫn là một vật cản thật, nhưng phải giữ
+    // confidence thật của nó: trả labels rỗng sẽ khiến obstacleDetector coi
+    // vật đó là chắc chắn 100% và bỏ qua ngưỡng OBSTACLE_SCORE_MIN.
+    // Text rỗng không khớp key nào trong LABEL_VI nên không đọc tên vật.
     const labelText = COCO_LABELS[classIndex] ?? '';
 
     objects.push({
       frame: { origin: { x, y }, size: { x: w, y: h } },
-      labels: labelText ? [{ text: labelText, confidence: score }] : [],
+      labels: [{ text: labelText, confidence: score }],
     });
   }
 
@@ -138,11 +154,16 @@ function parseDetections(
  * Sử dụng Photo.getPixelBuffer() để lấy raw pixel data (BGRA/RGBA),
  * convert sang RGB 320×320, rồi chạy inference.
  *
+ * Trả `null` khi KHÔNG DÒ ĐƯỢC (model chưa nạp, không lấy được pixel, hoặc
+ * inference lỗi) — khác hẳn với mảng rỗng nghĩa là "dò được và không thấy vật
+ * nào". Gộp hai trường hợp này lại sẽ khiến app nói "an toàn" với người khiếm
+ * thị trong lúc nó thực ra đang không nhìn thấy gì cả.
+ *
  * Caller phải dispose Photo SAU khi hàm này return.
  */
-export function detectFromPhoto(photo: Photo): DetectedObject[] {
-  if (model === null) return [];
-  if (!photo.hasPixelBuffer) return [];
+export function detectFromPhoto(photo: Photo): DetectedObject[] | null {
+  if (model === null) return null;
+  if (!photo.hasPixelBuffer) return null;
 
   try {
     const pixelBuffer = photo.getPixelBuffer();
@@ -151,7 +172,7 @@ export function detectFromPhoto(photo: Photo): DetectedObject[] {
     return parseDetections(outputs, photo.width, photo.height);
   } catch (err) {
     console.warn('Lỗi khi chạy TFLite detection:', err);
-    return [];
+    return null;
   }
 }
 

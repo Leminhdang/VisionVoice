@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/native';
 import type { CameraRef, CameraPhotoOutput } from 'react-native-vision-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,7 +12,7 @@ import { CornerControl } from '../components/CornerControl';
 import { ShutterButton } from '../components/ShutterButton';
 import { StateIndicator } from '../components/StateIndicator';
 import type { IndicatorState } from '../components/StateIndicator';
-import { CAPTURE_DEBOUNCE_MS } from '../constants/config';
+import { CAPTURE_DEBOUNCE_MS, CAPTURE_PHOTO_RESOLUTION } from '../constants/config';
 import { CAPTURE, ERRORS, HOME, NAV, SCREEN_TITLES } from '../constants/strings';
 import { announceScreen, useAccessibilityFocus } from '../hooks/useAccessibilityFocus';
 import { useDebounceCallback } from '../hooks/useDebounceCallback';
@@ -47,6 +48,7 @@ const INDICATOR_BY_PHASE: Record<AppPhase, IndicatorState> = {
 
 export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) {
   const { ready } = usePermissionBootstrap();
+  const isFocused = useIsFocused();
   const { phase, dispatch, canCapture, isProcessing } = useCaptureMachine();
   const insets = useSafeAreaInsets();
   const { ref: titleRef, focusNow } = useAccessibilityFocus();
@@ -92,7 +94,14 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
   const runCaptureFlow = useCallback(
     async (trigger: CaptureTrigger): Promise<void> => {
       const output = photoOutputRef.current;
-      if (output === null) return;
+      if (output === null) {
+        // Im lặng ở đây nghĩa là người dùng khiếm thị bấm chụp và không nhận
+        // được phản hồi nào — phải nói ra.
+        console.warn('Lỗi khi chụp ảnh: camera chưa sẵn sàng.');
+        void notifyError();
+        void audioSession.speakExclusive(ERRORS.CAMERA_NOT_READY);
+        return;
+      }
       const captureId = nextCaptureId();
       logMetric({ event: 'capture_start', captureId, trigger });
       void hapticCapture();
@@ -237,8 +246,12 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
 
   return (
     <View style={styles.container}>
+      {/* isActive: màn này không unmount khi mở chế độ khác, nên phải tự
+          nhường camera — hai session cùng active thì Android ngắt session cũ. */}
       <CameraViewport
         ref={cameraRef}
+        isActive={isFocused}
+        photoResolution={CAPTURE_PHOTO_RESOLUTION}
         onPhotoOutputReady={(output) => { photoOutputRef.current = output; }}
       />
       <View style={styles.scrimTop} pointerEvents="none" />

@@ -9,6 +9,7 @@ import {
   ASR_MAX_CONSECUTIVE_ERRORS,
   ASR_RESTART_ON_END_MS,
   ASR_RESTART_ON_ERROR_MS,
+  ASR_TRACE_ENABLED,
   SPEECH_RECOGNITION_LOCALE,
   TTS_GUARD_DELAY_MS,
 } from '../constants/config';
@@ -38,12 +39,46 @@ interface Subscription {
 let isListening = false;
 let isSuspended = false;
 let wantListening = false;
-/** Gate: true while TTS speaks and during the post-TTS guard window. */
+/**
+ * Chỉ đúng trong lúc TTS đang phát. KHÔNG gộp cửa sổ chặn hậu-TTS vào đây:
+ * cờ này chặn cả việc mở mic, nên nếu nó phụ thuộc vào một timer (mà
+ * stopListening() có quyền huỷ) thì cờ sẽ kẹt true và mic không bao giờ mở
+ * lại. speakExclusive() luôn tự hạ cờ khi lượt đọc của nó kết thúc.
+ */
 let isSpeaking = false;
+/** Mốc thời gian hết cửa sổ chặn hậu-TTS — hết hạn tự nhiên, không kẹt được. */
+let guardUntilMs = 0;
 let onTranscriptRef: TranscriptCallback | null = null;
 let restartTimerId: ReturnType<typeof setTimeout> | null = null;
 let consecutiveErrors = 0;
 let subscriptions: Subscription[] = [];
+/** Tăng mỗi lần speakExclusive được gọi — xem ghi chú ở speakExclusive. */
+let speakGeneration = 0;
+
+/**
+ * Nhật ký chẩn đoán luồng giọng nói. Mỗi dòng kèm nguyên trạng thái nội bộ vì
+ * mọi lỗi ở module này đều là "mic không mở" hoặc "transcript bị bỏ" — chỉ cần
+ * nhìn cờ nào đang bật là biết guard nào chặn. Tách khỏi VVMETRIC để log tần
+ * suất cao không lẫn vào dữ liệu đánh giá.
+ */
+export function traceVoice(event: string, detail?: Record<string, unknown>): void {
+  if (!ASR_TRACE_ENABLED) {
+    return;
+  }
+  // eslint-disable-next-line no-console -- INTENTIONAL: adb logcat collection path
+  // console.log(
+  //   'VVASR ' +
+  //     JSON.stringify({
+  //       event,
+  //       wantListening,
+  //       isListening,
+  //       isSuspended,
+  //       isSpeaking,
+  //       guardMsLeft: Math.max(0, guardUntilMs - Date.now()),
+  //       ...detail,
+  //     }),
+  // );
+}
 
 /**
  * Requests mic/speech permissions and starts continuous recognition.
@@ -55,15 +90,22 @@ export async function startListening(onTranscript: TranscriptCallback): Promise<
   try {
     const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!permission.granted) {
+      traceVoice('permission_denied');
       return;
     }
   } catch (err) {
     console.warn('Lỗi khi xin quyền nhận dạng giọng nói:', err);
+    traceVoice('permission_error');
     return;
   }
   subscribeOnce();
   wantListening = true;
-  isSpeaking = false;
+  // KHÔNG đặt isSpeaking = false ở đây. Màn hình thường gọi startListening()
+  // trong lúc lời giới thiệu đang được đọc; xoá cờ sẽ mở mic giữa câu và app
+  // nghe chính giọng mình — mà các câu giới thiệu lại đọc to đúng những từ
+  // khoá lệnh ("chụp ảnh", "dò vật cản", "dừng lại"). Nếu đang nói,
+  // startRecognition() sẽ bỏ qua và speakExclusive() mở mic khi đọc xong.
+  traceVoice('start_listening');
   startRecognition();
 }
 
@@ -73,6 +115,7 @@ export function stopListening(): void {
   wantListening = false;
   ExpoSpeechRecognitionModule.stop();
   isListening = false;
+  traceVoice('stop_listening');
 }
 
 /**
@@ -84,9 +127,11 @@ export function setSuspended(value: boolean): void {
     isSuspended = true;
     clearRestartTimer();
     hardStopRecognition();
+    traceVoice('suspended');
     return;
   }
   isSuspended = false;
+  traceVoice('resumed');
   if (wantListening) {
     scheduleRestart(TTS_GUARD_DELAY_MS);
   }
@@ -96,20 +141,36 @@ export function setSuspended(value: boolean): void {
  * Speaks with the mic closed: hard-stops ASR, speaks, then restarts ASR
  * after a guard delay. Transcripts arriving while speaking or within the
  * guard window are discarded.
+ *
+ * Các lượt nói có thể chồng nhau (ví dụ cảnh báo vật cản gọi liên tiếp):
+ * lượt mới `flush` khiến Speech.stop() làm lượt cũ resolve sớm. Nếu lượt cũ
+ * vẫn được phép mở lại mic, mic sẽ mở trong khi lượt mới đang nói — đúng thứ
+ * bất biến half-duplex cấm. Vì vậy chỉ lượt mới nhất được đụng vào ASR.
  */
 export async function speakExclusive(
   text: string,
   opts?: SpeakExclusiveOptions,
 ): Promise<void> {
+  speakGeneration++;
+  const generation = speakGeneration;
   isSpeaking = true;
   clearRestartTimer();
   hardStopRecognition();
+  traceVoice('speak_begin', { generation, chars: text.length });
   await tts.speak(text, opts);
-  if (wantListening && !isSuspended) {
-    scheduleRestart(TTS_GUARD_DELAY_MS);
+  if (generation !== speakGeneration) {
+    // Lượt mới đang phát và sẽ tự hạ cờ khi nó xong — không đụng vào state.
+    traceVoice('speak_superseded', { generation, current: speakGeneration });
     return;
   }
+  // Hạ cờ vô điều kiện: lượt đọc này đã kết thúc thật. Cửa sổ chặn hậu-TTS
+  // chuyển sang guardUntilMs để việc mở lại mic không phụ thuộc timer nào.
   isSpeaking = false;
+  guardUntilMs = Date.now() + TTS_GUARD_DELAY_MS;
+  traceVoice('speak_end', { generation });
+  if (wantListening && !isSuspended) {
+    scheduleRestart(TTS_GUARD_DELAY_MS);
+  }
 }
 
 function subscribeOnce(): void {
@@ -124,14 +185,23 @@ function subscribeOnce(): void {
 }
 
 function handleResult(event: ExpoSpeechRecognitionResultEvent): void {
-  if (isSpeaking) {
+  // !wantListening: kết quả cuối thường về sau khi stopListening()/abort();
+  // màn hình cũ vẫn còn mounted (chỉ blur) nên handler của nó sẽ chạy và
+  // điều hướng nhầm. Không muốn nghe thì không nhận transcript.
+  if (isSpeaking || Date.now() < guardUntilMs || !wantListening) {
+    traceVoice('result_dropped', {
+      transcript: event.results[0]?.transcript ?? '',
+      isFinal: event.isFinal,
+    });
     return;
   }
   consecutiveErrors = 0;
   const transcript = event.results[0]?.transcript ?? '';
   if (transcript.trim().length === 0) {
+    traceVoice('result_empty', { isFinal: event.isFinal });
     return;
   }
+  traceVoice('result', { transcript, isFinal: event.isFinal });
   onTranscriptRef?.(transcript, event.isFinal);
 }
 
@@ -139,7 +209,9 @@ function handleEnd(): void {
   isListening = false;
   // Normal end (no error) — reset backoff counter.
   consecutiveErrors = 0;
-  if (wantListening && !isSuspended && !isSpeaking) {
+  const willRestart = wantListening && !isSuspended && !isSpeaking;
+  traceVoice('recognition_end', { willRestart });
+  if (willRestart) {
     scheduleRestart(ASR_RESTART_ON_END_MS);
   }
 }
@@ -148,28 +220,40 @@ function handleError(event: ExpoSpeechRecognitionErrorEvent): void {
   isListening = false;
   // 'aborted' is self-induced (hardStopRecognition) — not worth a warning.
   if (event.error === 'aborted') {
+    traceVoice('recognition_aborted');
     return;
   }
   consecutiveErrors++;
   console.warn('Lỗi khi nhận dạng giọng nói:', event.error, event.message);
+  traceVoice('recognition_error', {
+    error: event.error,
+    message: event.message,
+    consecutiveErrors,
+  });
   if (!wantListening || isSuspended || isSpeaking) {
+    traceVoice('recognition_error_ignored', { error: event.error });
     return;
   }
   if (consecutiveErrors > ASR_MAX_CONSECUTIVE_ERRORS) {
     console.warn(
       `Nhận dạng giọng nói: ${consecutiveErrors} lỗi liên tiếp, tạm dừng thử lại.`,
     );
+    traceVoice('recognition_gave_up', { consecutiveErrors, error: event.error });
     return;
   }
   const backoff = Math.min(
     ASR_RESTART_ON_ERROR_MS * Math.pow(2, consecutiveErrors - 1),
     ASR_MAX_BACKOFF_MS,
   );
+  traceVoice('recognition_retry', { backoff, consecutiveErrors });
   scheduleRestart(backoff);
 }
 
 function startRecognition(): void {
-  if (!wantListening || isSuspended || isListening) {
+  if (!wantListening || isSuspended || isListening || isSpeaking) {
+    // Trạng thái đi kèm cho biết cờ nào đang chặn — "mic không mở" luôn quy về
+    // đúng một trong bốn cờ này.
+    traceVoice('recognition_skipped');
     return;
   }
   ExpoSpeechRecognitionModule.start({
@@ -183,6 +267,7 @@ function startRecognition(): void {
     },
   });
   isListening = true;
+  traceVoice('recognition_started', { lang: SPEECH_RECOGNITION_LOCALE });
 }
 
 /** Cancels recognition immediately without waiting for a final result. */
@@ -199,7 +284,6 @@ function scheduleRestart(delayMs: number): void {
   clearRestartTimer();
   restartTimerId = setTimeout(() => {
     restartTimerId = null;
-    isSpeaking = false;
     startRecognition();
   }, delayMs);
 }

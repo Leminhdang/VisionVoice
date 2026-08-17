@@ -9,6 +9,7 @@ import type { AI, ChatSession, GenerativeModel, Part } from '@react-native-fireb
 import { getApp } from '@react-native-firebase/app';
 
 import {
+  API_TIMEOUT_MS,
   GEMINI_FALLBACK_MODEL,
   GEMINI_MODEL,
   MOCK_DELAY_MS,
@@ -114,6 +115,20 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Chặn request treo vô hạn: sau API_TIMEOUT_MS ném GeminiError('network').
+ * Không có timeout thì UI kẹt ở trạng thái "đang phân tích" mà không phát ra
+ * âm thanh nào — người dùng khiếm thị không có cách nào biết hay thoát ra.
+ */
+function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timerId = setTimeout(() => {
+      reject(new GeminiError('network', `Quá thời gian chờ ${API_TIMEOUT_MS}ms.`));
+    }, API_TIMEOUT_MS);
+    promise.then(resolve, reject).finally(() => clearTimeout(timerId));
+  });
+}
+
 function logRequest(captureId: number | undefined, kind: 'describe' | 'qa'): void {
   if (captureId === undefined) {
     return;
@@ -140,10 +155,9 @@ function extractText(response: { text: () => string }): string {
 }
 
 async function requestDescription(modelName: string, image: PreparedImage): Promise<string> {
-  const result = await getModel(modelName).generateContent([
-    buildImagePart(image),
-    { text: DESCRIBE_PROMPT },
-  ]);
+  const result = await withTimeout(
+    getModel(modelName).generateContent([buildImagePart(image), { text: DESCRIBE_PROMPT }]),
+  );
   return extractText(result.response);
 }
 
@@ -220,7 +234,7 @@ export function createQASession(image: PreparedImage): QASession {
         ? [buildImagePart(image), { text: question }]
         : [{ text: question }];
       try {
-        const result = await chat.sendMessage(parts);
+        const result = await withTimeout(chat.sendMessage(parts));
         const answer = extractText(result.response);
         isFirstTurn = false;
         logResponse(captureId, { ok: true });

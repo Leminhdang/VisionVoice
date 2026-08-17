@@ -2,11 +2,13 @@ import { useIsFocused } from '@react-navigation/native';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useCallback, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CameraPhotoOutput } from 'react-native-vision-camera';
 
 import { BigActionButton } from '../components/BigActionButton';
 import { CameraViewport } from '../components/CameraViewport';
 import { SeverityBanner } from '../components/SeverityBanner';
+import { OBSTACLE_PHOTO_RESOLUTION } from '../constants/config';
 import { NAV, OBSTACLE } from '../constants/strings';
 import { announceScreen } from '../hooks/useAccessibilityFocus';
 import { useObstacleScanner } from '../hooks/useObstacleScanner';
@@ -29,6 +31,7 @@ export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenPro
   useKeepAwake();
 
   const isFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
   const { assessment, setPhotoOutput } = useObstacleScanner({ active: isFocused });
   const severity = assessment?.severity ?? 'safe';
 
@@ -55,11 +58,12 @@ export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenPro
     <View style={styles.container}>
       <CameraViewport
         isActive={isFocused}
+        photoResolution={OBSTACLE_PHOTO_RESOLUTION}
         onPhotoOutputReady={handlePhotoOutputReady}
       />
       <View pointerEvents="none" style={styles.scrim} />
       <SeverityBanner severity={severity} objectLabel={assessment?.label} />
-      <View style={styles.stopZone}>
+      <View style={[styles.stopZone, { bottom: spacing.xl + insets.bottom }]}>
         <BigActionButton
           label={OBSTACLE.STOP_BUTTON}
           onPress={exit}
@@ -82,10 +86,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     opacity: SCRIM_OPACITY,
   },
+  // bottom đặt tại chỗ dùng vì phải cộng thêm safe-area inset (thanh home).
   stopZone: {
     position: 'absolute',
     left: SCREEN_PADDING,
     right: SCREEN_PADDING,
-    bottom: spacing.xl,
   },
 });

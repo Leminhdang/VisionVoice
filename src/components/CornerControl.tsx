@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../theme/colors';
 import { CORNER_CONTROL, radius, SCREEN_PADDING } from '../theme/spacing';
@@ -17,9 +18,17 @@ const HIT_SLOP = 8;
 const BG_OPACITY = 0.6;
 
 export function CornerControl({ position, iconName, label, hint, onPress }: CornerControlProps) {
+  // Màn hình không có header (headerShown: false), nên nút góc phải tự tránh
+  // status bar / Dynamic Island ở trên và thanh home ở dưới.
+  const insets = useSafeAreaInsets();
+  const insetStyle =
+    position === 'bottomLeft'
+      ? { bottom: SCREEN_PADDING + insets.bottom }
+      : { top: SCREEN_PADDING + insets.top };
+
   return (
     <TouchableOpacity
-      style={[styles.base, positionStyles[position]]}
+      style={[styles.base, positionStyles[position], insetStyle]}
       onPress={onPress}
       hitSlop={{ top: HIT_SLOP, bottom: HIT_SLOP, left: HIT_SLOP, right: HIT_SLOP }}
       accessibilityRole="button"
@@ -47,16 +56,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     opacity: BG_OPACITY,
   },
+  // Trục dọc do insetStyle quyết định — ở đây chỉ đặt trục ngang.
   topLeft: {
-    top: SCREEN_PADDING,
     left: SCREEN_PADDING,
   },
   topRight: {
-    top: SCREEN_PADDING,
     right: SCREEN_PADDING,
   },
   bottomLeft: {
-    bottom: SCREEN_PADDING,
     left: SCREEN_PADDING,
   },
 });

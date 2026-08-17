@@ -52,10 +52,11 @@ const SAFE_ASSESSMENT: Assessment = { severity: 'safe', label: null, areaRatio: 
 const SEVERITY_RANK: Record<Severity, number> = { safe: 0, warning: 1, danger: 2 };
 
 /**
- * ML Kit always returns a `labels` array but it may be empty (classification
- * off, or classifier unsure). An unlabeled detection is still a physical
- * obstacle, so an empty `labels` array is treated as score 1 — it always
- * passes the confidence filter.
+ * tfliteDetector always emits exactly one label carrying the detection's real
+ * confidence (with an empty `text` when the class index is outside COCO), so
+ * the empty-`labels` branch below is only a defensive fallback. It keeps the
+ * historical meaning: an unlabeled detection is still a physical obstacle, so
+ * it is treated as score 1 and always passes the confidence filter.
  */
 function getObjectScore(object: DetectedObject): number {
   if (object.labels.length === 0) {

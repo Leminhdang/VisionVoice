@@ -1,6 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useRef } from 'react';
 
+import { VOICE_INTENT_COOLDOWN_MS } from '../constants/config';
 import * as audioSession from '../services/audioSession';
 import { hapticNavigate } from '../services/feedback';
 import { parseIntent } from '../services/voiceIntents';
@@ -15,9 +16,16 @@ export interface UseVoiceControlOptions {
 
 /**
  * Per-screen voice control: while the screen is focused (and `enabled`),
- * the audio session listens continuously; each FINAL transcript is parsed
- * into a VoiceIntent and dispatched to the matching handler (with a
- * navigation haptic). Listening stops on blur/unmount.
+ * the audio session listens continuously; each transcript is parsed into a
+ * VoiceIntent and dispatched to the matching handler (with a navigation
+ * haptic). Listening stops on blur/unmount.
+ *
+ * Kết quả TẠM THỜI cũng được xử lý, không chỉ kết quả cuối: ở chế độ
+ * `continuous` trên Android, engine phát interim liên tục còn `isFinal` chỉ
+ * đến khi nó tự chốt đoạn — có thể rất trễ hoặc không bao giờ, nên chờ
+ * `isFinal` là vứt bỏ những lệnh đã nghe đúng. Đổi lại, một câu nói sinh ra
+ * nhiều interim ("chụp", "chụp ảnh"...) nên cùng một intent bị chặn lặp trong
+ * VOICE_INTENT_COOLDOWN_MS.
  *
  * Handlers are kept in a ref so identity changes never restart the ASR.
  */
@@ -26,6 +34,8 @@ export function useVoiceControl(
   opts?: UseVoiceControlOptions,
 ): void {
   const handlersRef = useRef<VoiceIntentHandlers>(handlers);
+  const lastIntentRef = useRef<VoiceIntent | null>(null);
+  const lastIntentAtRef = useRef(0);
   const enabled = opts?.enabled ?? true;
 
   useEffect(() => {
@@ -36,14 +46,31 @@ export function useVoiceControl(
   }, [handlers]);
 
   const handleTranscript = useCallback((text: string, isFinal: boolean) => {
-    if (!isFinal) {
-      return;
-    }
     const intent = parseIntent(text);
     const handler = handlersRef.current[intent];
-    if (handler === undefined) {
+    const now = Date.now();
+    // Cùng một intent lặp lại trong cooldown là các interim nối tiếp của một
+    // câu nói duy nhất, không phải lệnh mới.
+    const isRepeat =
+      lastIntentRef.current === intent && now - lastIntentAtRef.current < VOICE_INTENT_COOLDOWN_MS;
+
+    // Phân biệt ba trường hợp "nói lệnh mà không thấy gì xảy ra": ASR không
+    // trả transcript, transcript không khớp từ khoá nào, hoặc khớp nhưng màn
+    // hình hiện tại không đăng ký handler cho intent đó.
+    audioSession.traceVoice('intent', {
+      transcript: text,
+      intent,
+      isFinal,
+      isRepeat,
+      handled: handler !== undefined && !isRepeat,
+      registered: Object.keys(handlersRef.current),
+    });
+
+    if (handler === undefined || isRepeat) {
       return;
     }
+    lastIntentRef.current = intent;
+    lastIntentAtRef.current = now;
     void hapticNavigate();
     handler();
   }, []);

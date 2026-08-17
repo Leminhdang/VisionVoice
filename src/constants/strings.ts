@@ -106,6 +106,8 @@ export const OBSTACLE = {
   STOP_BUTTON: 'Dừng dò vật cản',
   STOP_HINT: 'Dừng quét vật cản và quay về màn hình máy ảnh.',
   LABEL_VI: COCO_LABEL_VI,
+  DETECTOR_FAILED:
+    'Không dò được vật cản. Chế độ dò đã dừng, vui lòng quay lại và thử lại.',
 };
 
 export const ERRORS = {
@@ -117,6 +119,7 @@ export const ERRORS = {
     'Thiết bị chưa có giọng đọc tiếng Việt. ' +
     'Vui lòng cài Google Text-to-Speech và dữ liệu tiếng Việt trong phần Cài đặt điện thoại.',
   GALLERY: 'Không thể mở thư viện ảnh.',
+  CAMERA_NOT_READY: 'Máy ảnh chưa sẵn sàng. Vui lòng chờ một chút rồi thử lại.',
 };
 
 export const SETTINGS = {

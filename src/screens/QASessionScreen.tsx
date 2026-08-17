@@ -1,6 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BigActionButton } from '../components/BigActionButton';
 import { StateIndicator } from '../components/StateIndicator';
@@ -187,9 +188,12 @@ function QASessionLayout({
   onMicPressIn,
 }: QASessionLayoutProps) {
   const isMicDisabled = onMicPressIn === undefined;
+  // Không có header điều hướng, nên màn hình tự chừa chỗ cho status bar ở trên
+  // và thanh home ở dưới — nếu không, nút Quay lại và vùng mic bị che.
+  const insets = useSafeAreaInsets();
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { height: HEADER_HEIGHT + insets.top, paddingTop: insets.top }]}>
         <View style={styles.backWrap}>
           <BigActionButton
             label={QA.BACK}
@@ -219,6 +223,7 @@ function QASessionLayout({
       <Pressable
         style={({ pressed }) => [
           styles.micZone,
+          { height: SHUTTER_ZONE + insets.bottom, paddingBottom: insets.bottom },
           pressed && !isMicDisabled && styles.micZonePressed,
         ]}
         onPressIn={onMicPressIn}
@@ -240,8 +245,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bgAlt,
   },
+  // height/paddingTop đặt tại chỗ dùng vì phụ thuộc safe-area inset.
   header: {
-    height: HEADER_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -266,8 +271,8 @@ const styles = StyleSheet.create({
   transcript: {
     flex: 1,
   },
+  // height/paddingBottom đặt tại chỗ dùng vì phụ thuộc safe-area inset.
   micZone: {
-    height: SHUTTER_ZONE,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',

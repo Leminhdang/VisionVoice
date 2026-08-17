@@ -32,6 +32,9 @@ export type MetricEvent =
       detectMs: number;
       detections: number;
     }
+  // Khung không dò được (model chưa nạp / lỗi inference). Tách khỏi
+  // obstacle_frame để số liệu detections không bị pha tạp.
+  | { event: 'obstacle_detect_failed'; frameId: number; consecutive: number }
   | {
       event: 'obstacle_alert';
       frameId: number;

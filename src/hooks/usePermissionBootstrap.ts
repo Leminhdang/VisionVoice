@@ -72,17 +72,22 @@ export function usePermissionBootstrap(): PermissionBootstrapState {
         setMicGranted(isMicGranted);
 
         // --- Camera permission ---
-        if (!cameraPermission.hasPermission) {
+        // `cameraPermission` bị đóng băng ở render đầu (effect chạy một lần),
+        // nên phải dùng giá trị requestPermission() trả về, không đọc lại
+        // cameraPermission.hasPermission sau khi xin quyền.
+        let isCameraGranted = cameraPermission.hasPermission;
+
+        if (!isCameraGranted) {
           await speak(PERMISSIONS.CAMERA_REQUEST);
           await trackedDelay(PERMISSION_PROMPT_DELAY_MS);
           if (isCancelledRef.current) return;
-          await cameraPermission.requestPermission();
+          isCameraGranted = await cameraPermission.requestPermission();
         }
 
         if (isCancelledRef.current) return;
         setReady(true);
 
-        if (!cameraPermission.hasPermission) {
+        if (!isCameraGranted) {
           await speak(PERMISSIONS.CAMERA_DENIED);
           return;
         }

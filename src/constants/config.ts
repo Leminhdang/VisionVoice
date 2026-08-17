@@ -24,6 +24,17 @@ export const ANNOUNCE_COOLDOWN_MS = {
   danger: 2000,
   warning: 3000,
 };
+/** Số khung dò hỏng liên tiếp trước khi báo cho người dùng và dừng vòng quét. */
+export const OBSTACLE_MAX_DETECT_FAILURES = 5;
+/**
+ * Độ phân giải ảnh yêu cầu ở photoOutput. Mặc định của VisionCamera là
+ * UHD_4_3 (3024×4032 — 12 megapixel), quá lớn cho cả hai nhu cầu ở đây và là
+ * nguyên nhân chính khiến mỗi khung dò mất ~1,5 giây.
+ */
+// Ảnh gửi Gemini: pipeline hạ về IMAGE_RESIZE_WIDTH nên không cần cao hơn.
+export const CAPTURE_PHOTO_RESOLUTION = { width: 1440, height: 1920 };
+// Khung dò vật cản: model chỉ ăn 320×320, chụp to hơn là phí sạch.
+export const OBSTACLE_PHOTO_RESOLUTION = { width: 480, height: 640 };
 
 // Voice / ASR timing
 export const ASR_RESTART_ON_END_MS = 500;
@@ -32,6 +43,8 @@ export const ASR_MAX_CONSECUTIVE_ERRORS = 5;
 export const ASR_MAX_BACKOFF_MS = 30_000;
 export const TTS_GUARD_DELAY_MS = 400;
 export const QA_RELISTEN_DELAY_MS = 800;
+/** Chặn một lệnh giọng nói lặp lại — xem ghi chú trong useVoiceControl. */
+export const VOICE_INTENT_COOLDOWN_MS = 2000;
 
 // Capture flow timing
 export const CAPTURE_DEBOUNCE_MS = 2000;
@@ -47,6 +60,8 @@ export const DEFAULT_TTS_PITCH = 1.0;
 // Modes
 export const MOCK_MODE: boolean = false;
 export const METRICS_ENABLED = true;
+/** Nhật ký chẩn đoán luồng nhận dạng giọng nói — lọc bằng `adb logcat | grep VVASR`. */
+export const ASR_TRACE_ENABLED = true;
 
 // Mock data
 export const MOCK_DESCRIPTION =

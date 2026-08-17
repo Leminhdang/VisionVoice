@@ -3,6 +3,7 @@ import type { CameraPhotoOutput } from 'react-native-vision-camera';
 
 import {
   OBSTACLE_ASSESSMENT_THROTTLE_MS,
+  OBSTACLE_MAX_DETECT_FAILURES,
 } from '../constants/config';
 import { OBSTACLE } from '../constants/strings';
 import { speakExclusive } from '../services/audioSession';
@@ -70,6 +71,7 @@ export function useObstacleScanner(
   const policyRef = useRef<AnnouncementPolicy | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCyclingRef = useRef(false);
+  const failureCountRef = useRef(0);
   const sensitivityRef = useRef(settings.obstacleSensitivity);
 
   useEffect(() => {
@@ -87,12 +89,33 @@ export function useObstacleScanner(
         timerRef.current = null;
       }
       isCyclingRef.current = false;
+      // Camera đóng theo màn hình; output này đã chết. Không buông ra thì lần
+      // vào lại sẽ chụp lên nó trước khi camera kịp cấp output mới.
+      photoOutputRef.current = null;
       return undefined;
     }
 
     policyRef.current = createAnnouncementPolicy();
     setAssessment(null);
     isCyclingRef.current = true;
+    failureCountRef.current = 0;
+
+    /**
+     * Một khung không dò được. Im lặng bỏ qua vài lần đầu (model có thể còn
+     * đang nạp, một khung lỗi lẻ là bình thường), nhưng hỏng liên tiếp thì
+     * phải nói ra và dừng — im lặng ở chế độ dò vật cản bị hiểu thành
+     * "đường trống", đúng thứ nguy hiểm nhất có thể nói với người khiếm thị.
+     */
+    const handleDetectFailure = (): void => {
+      failureCountRef.current += 1;
+      if (failureCountRef.current < OBSTACLE_MAX_DETECT_FAILURES) {
+        return;
+      }
+      console.warn('Lỗi khi quét vật cản: dò hỏng liên tiếp, dừng vòng quét.');
+      isCyclingRef.current = false;
+      hapticForSeverity('danger');
+      void speakExclusive(OBSTACLE.DETECTOR_FAILED, { flush: true });
+    };
 
     const cycle = async (): Promise<void> => {
       if (!isCyclingRef.current) return;
@@ -112,6 +135,17 @@ export function useObstacleScanner(
         photo = await output.capturePhoto({ enableShutterSound: false }, {});
         const objects = detectFromPhoto(photo);
         const detectMs = Date.now() - start;
+
+        if (objects === null) {
+          handleDetectFailure();
+          logMetric({
+            event: 'obstacle_detect_failed',
+            frameId,
+            consecutive: failureCountRef.current,
+          });
+          return;
+        }
+        failureCountRef.current = 0;
 
         logMetric({
           event: 'obstacle_frame',
@@ -141,7 +175,12 @@ export function useObstacleScanner(
           void announceAssessment(result);
         }
       } catch (err) {
-        console.warn('Lỗi khi quét vật cản:', err);
+        // Rời chế độ trong lúc capturePhoto còn đang bay: camera đóng trước
+        // khi promise resolve ("Camera is closed"). Đây là teardown bình
+        // thường, không phải lỗi — chỉ cảnh báo khi vẫn đang quét thật.
+        if (isCyclingRef.current) {
+          console.warn('Lỗi khi quét vật cản:', err);
+        }
       } finally {
         photo?.dispose();
         scheduleNext();
