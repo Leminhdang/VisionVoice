@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useRef } from 'react';
 import { StyleSheet } from 'react-native';
 import { Camera, useCameraDevice, usePhotoOutput } from 'react-native-vision-camera';
-import type { CameraRef, CameraPhotoOutput } from 'react-native-vision-camera';
+import type { CameraRef, CameraPhotoOutput, Size } from 'react-native-vision-camera';
 
 export interface CameraViewportProps {
   onReady?: () => void;
@@ -9,6 +9,13 @@ export interface CameraViewportProps {
   isActive?: boolean;
   /** Cho phép truy cập photoOutput từ bên ngoài component. */
   onPhotoOutputReady?: (photoOutput: CameraPhotoOutput) => void;
+  /**
+   * Ghi đè độ phân giải chụp. Bỏ trống = mặc định của VisionCamera (UHD 4:3).
+   *
+   * Phải truyền hằng số cấp module — `usePhotoOutput` so sánh giá trị này
+   * theo tham chiếu, object literal inline sẽ gây tạo lại output mỗi render.
+   */
+  targetResolution?: Size;
 }
 
 /**
@@ -20,11 +27,15 @@ export interface CameraViewportProps {
  * Photo output luôn bật vì cả hai screen đều cần chụp ảnh.
  */
 export const CameraViewport = forwardRef<CameraRef, CameraViewportProps>(
-  function CameraViewport({ onReady, isActive = true, onPhotoOutputReady }, ref) {
+  function CameraViewport(
+    { onReady, isActive = true, onPhotoOutputReady, targetResolution },
+    ref,
+  ) {
     const innerCameraRef = useRef<CameraRef | null>(null);
     const device = useCameraDevice('back');
     const photoOutput = usePhotoOutput({
       qualityPrioritization: 'speed',
+      targetResolution,
     });
     const hasReportedRef = useRef(false);
 

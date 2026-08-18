@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTensorflowModel } from 'react-native-fast-tflite';
 import type { CameraPhotoOutput } from 'react-native-vision-camera';
 
 import {
   OBSTACLE_ASSESSMENT_THROTTLE_MS,
+  TFLITE_DELEGATES,
 } from '../constants/config';
 import { OBSTACLE } from '../constants/strings';
 import { speakExclusive } from '../services/audioSession';
 import { hapticForSeverity, playDanger } from '../services/feedback';
+import { imageToModelInput } from '../services/imagePreprocess';
 import { logMetric, nextFrameId } from '../services/metrics';
 import {
   assessDetections,
   createAnnouncementPolicy,
 } from '../services/obstacleDetector';
 import type { AnnouncementPolicy, Assessment } from '../services/obstacleDetector';
-import { detectFromPhoto, getTfliteModel } from '../services/tfliteDetector';
+import { parseDetections } from '../services/tfliteDetector';
 import { useSettings } from '../state/SettingsContext';
 
 interface UseObstacleScannerOptions {
@@ -50,8 +53,8 @@ async function announceAssessment(assessment: Assessment): Promise<void> {
  * Interval-based obstacle scanner using VisionCamera v5 + TFLite.
  *
  * While `opts.active` is true, captures a photo every ~900ms from the
- * `photoOutput`, extracts raw pixels via Photo.getPixelBuffer(),
- * runs EfficientDet-Lite0 inference, and assesses severity.
+ * photoOutput, decodes + resizes it to 320×320 natively (imageToModelInput),
+ * and runs EfficientDet-Lite0 inference.
  *
  * setPhotoOutput() must be called when the camera is ready (from
  * CameraViewport's onPhotoOutputReady callback).
@@ -80,6 +83,23 @@ export function useObstacleScanner(
     photoOutputRef.current = output;
   }, []);
 
+  // Load TFLite model via hook
+  const tfModel = useTensorflowModel(
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('../../assets/models/efficientdet_lite0_detection.tflite'),
+    TFLITE_DELEGATES,
+  );
+  const modelRef = useRef(tfModel.model);
+  modelRef.current = tfModel.model;
+
+  // TODO(debug): gỡ sau khi xác nhận model mới nạp đúng trên thiết bị.
+  useEffect(() => {
+    if (tfModel.model != null) {
+      console.log('[TFLite] inputs', JSON.stringify(tfModel.model.inputs));
+      console.log('[TFLite] outputs', JSON.stringify(tfModel.model.outputs));
+    }
+  }, [tfModel.model]);
+
   useEffect(() => {
     if (!active) {
       if (timerRef.current !== null) {
@@ -98,8 +118,8 @@ export function useObstacleScanner(
       if (!isCyclingRef.current) return;
 
       const output = photoOutputRef.current;
-      const model = getTfliteModel();
-      if (output === null || model === null) {
+      const model = modelRef.current;
+      if (output === null || model == null) {
         scheduleNext();
         return;
       }
@@ -110,8 +130,22 @@ export function useObstacleScanner(
         const start = Date.now();
 
         photo = await output.capturePhoto({ enableShutterSound: false }, {});
-        const objects = detectFromPhoto(photo);
+
+        // Decode + resize về 320×320 chạy native; toImage() áp luôn EXIF
+        // orientation nên frame đưa vào model mới thực sự thẳng đứng.
+        const image = await photo.toImageAsync();
+        let inputBuffer: ArrayBuffer;
+        try {
+          inputBuffer = await imageToModelInput(image);
+        } finally {
+          image.dispose();
+        }
+
+        // Run TFLite inference
+        const outputs = model.runSync([inputBuffer]);
         const detectMs = Date.now() - start;
+
+        const objects = parseDetections(outputs, photo.width, photo.height);
 
         logMetric({
           event: 'obstacle_frame',

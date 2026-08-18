@@ -7,6 +7,7 @@ import type { CameraPhotoOutput } from 'react-native-vision-camera';
 import { BigActionButton } from '../components/BigActionButton';
 import { CameraViewport } from '../components/CameraViewport';
 import { SeverityBanner } from '../components/SeverityBanner';
+import { OBSTACLE_CAPTURE_RESOLUTION } from '../constants/config';
 import { NAV, OBSTACLE } from '../constants/strings';
 import { announceScreen } from '../hooks/useAccessibilityFocus';
 import { useObstacleScanner } from '../hooks/useObstacleScanner';
@@ -21,7 +22,8 @@ const SCRIM_OPACITY = 0.55;
 
 /**
  * Chế độ dò vật cản: camera chạy nền, useObstacleScanner chụp frame
- * mỗi ~900ms qua photoOutput → TFLite inference → assessment + TTS.
+ * mỗi ~900ms qua photoOutput, decode + resize native, chạy TFLite inference
+ * rồi ra assessment + TTS.
  * Blur → active=false → scanner dừng, không TTS rơi rớt sau khi thoát.
  * Màn hình luôn sáng nhờ useKeepAwake.
  */
@@ -56,6 +58,7 @@ export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenPro
       <CameraViewport
         isActive={isFocused}
         onPhotoOutputReady={handlePhotoOutputReady}
+        targetResolution={OBSTACLE_CAPTURE_RESOLUTION}
       />
       <View pointerEvents="none" style={styles.scrim} />
       <SeverityBanner severity={severity} objectLabel={assessment?.label} />

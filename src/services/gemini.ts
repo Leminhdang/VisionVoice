@@ -9,6 +9,7 @@ import type { AI, ChatSession, GenerativeModel, Part } from '@react-native-fireb
 import { getApp } from '@react-native-firebase/app';
 
 import {
+  API_TIMEOUT_MS,
   GEMINI_FALLBACK_MODEL,
   GEMINI_MODEL,
   MOCK_DELAY_MS,
@@ -114,6 +115,36 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Chặn treo vĩnh viễn.
+ *
+ * generateContent/sendMessage không có timeout riêng, nên một request kẹt
+ * (mạng lặng, hoặc App Check không lấy được token) sẽ không bao giờ settle:
+ * không lỗi, không phản hồi, UI đứng im. Với người khiếm thị đó là kiểu hỏng
+ * tệ nhất — im lặng và không có lối thoát.
+ *
+ * Ném GeminiError('network') nên toGeminiError trả nguyên vẹn, và
+ * shouldRetryWithFallback trả false — không thử lại model dự phòng, vì như vậy
+ * sẽ nhân đôi thời gian chờ của người dùng.
+ */
+async function withTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new GeminiError('network', `${label} không phản hồi sau ${API_TIMEOUT_MS}ms.`),
+      );
+    }, API_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([work, expiry]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 function logRequest(captureId: number | undefined, kind: 'describe' | 'qa'): void {
   if (captureId === undefined) {
     return;
@@ -140,10 +171,13 @@ function extractText(response: { text: () => string }): string {
 }
 
 async function requestDescription(modelName: string, image: PreparedImage): Promise<string> {
-  const result = await getModel(modelName).generateContent([
-    buildImagePart(image),
-    { text: DESCRIBE_PROMPT },
-  ]);
+  const result = await withTimeout(
+    getModel(modelName).generateContent([
+      buildImagePart(image),
+      { text: DESCRIBE_PROMPT },
+    ]),
+    'Yêu cầu mô tả ảnh',
+  );
   return extractText(result.response);
 }
 
@@ -220,7 +254,10 @@ export function createQASession(image: PreparedImage): QASession {
         ? [buildImagePart(image), { text: question }]
         : [{ text: question }];
       try {
-        const result = await chat.sendMessage(parts);
+        const result = await withTimeout(
+          chat.sendMessage(parts),
+          'Yêu cầu hỏi đáp',
+        );
         const answer = extractText(result.response);
         isFirstTurn = false;
         logResponse(captureId, { ok: true });
