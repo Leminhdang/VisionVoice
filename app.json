@@ -16,7 +16,8 @@
       [
         "react-native-fast-tflite",
         {
-          "enableCoreMLDelegate": true
+          "enableCoreMLDelegate": true,
+          "enableAndroidGpuLibraries": true
         }
       ],
       [
@@ -43,6 +44,9 @@
           "ios": {
             "useFrameworks": "static",
             "deploymentTarget": "16.4"
+          },
+          "android": {
+            "minSdkVersion": 26
           }
         }
       ],

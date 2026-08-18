@@ -5,7 +5,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { initFirebase } from './src/services/firebase';
-import { initTfliteModel } from './src/services/tfliteDetector';
 import { initTts } from './src/services/tts';
 import { SettingsProvider } from './src/state/SettingsContext';
 import { colors } from './src/theme/colors';
@@ -25,11 +24,11 @@ const NAV_THEME = {
 
 export default function App() {
   useEffect(() => {
-    // Singleton trọn vòng đời app — tts.ts, firebase.ts và tfliteDetector.ts
+    // Singleton trọn vòng đời app — tts.ts và firebase.ts
     // ghi rõ chỉ gọi một lần từ App.tsx và không có teardown.
+    // TFLite model loaded via useTensorflowModel hook in useObstacleScanner.
     initTts();
     void initFirebase();
-    void initTfliteModel();
   }, []);
 
   return (
