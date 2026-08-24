@@ -1,26 +1,26 @@
-import { COCO_LABELS, COCO_LABEL_VI } from '../cocoLabels';
+import { COCO_90_LABELS, COCO_LABEL_VI } from '../cocoLabels';
 
 /**
- * COCO_LABELS phải khớp từng chỉ số với bảng nhãn nhúng trong model.
+ * COCO_90_LABELS phải khớp từng chỉ số với bảng nhãn nhúng trong model.
  * Kiểm chứng lại bằng:
- *   unzip -p assets/models/efficientdet_lite0.tflite labels.txt | cat -n
+ *   unzip -p assets/models/efficientdet_lite0_detection.tflite labelmap.txt | cat -n
  *
- * Rút bảng xuống 80 lớp liền mạch (bỏ các ô trống) là lỗi đã từng xảy ra:
+ * Rút bảng xuống 80 lớp liền mạch (bỏ các ô ghost) là lỗi đã từng xảy ra:
  * mọi lớp từ chỉ số 11 trở lên lệch đi, `chair` bị đọc thành `toilet`.
  */
-describe('COCO_LABELS khớp bảng nhãn của model', () => {
-  test('có đúng 90 phần tử, gồm 10 ô trống', () => {
+describe('COCO_90_LABELS khớp bảng nhãn của model', () => {
+  test('có đúng 90 phần tử, gồm 10 ô ghost', () => {
     // Assert
-    expect(COCO_LABELS).toHaveLength(90);
-    expect(COCO_LABELS.filter((label) => label === '')).toHaveLength(10);
+    expect(COCO_90_LABELS).toHaveLength(90);
+    expect(COCO_90_LABELS.filter((label) => label === null)).toHaveLength(10);
   });
 
   test('các chỉ số mốc nằm đúng vị trí', () => {
-    // Arrange — lấy từ labels.txt của model, 0-based.
-    const expected: ReadonlyArray<[number, string]> = [
+    // Arrange — lấy từ labelmap.txt của model, 0-based.
+    const expected: ReadonlyArray<[number, string | null]> = [
       [0, 'person'],
       [10, 'fire hydrant'],
-      [11, ''], // ô trống đầu tiên — chỗ bảng 80 lớp bắt đầu lệch
+      [11, null], // ghost đầu tiên — chỗ bảng 80 lớp bắt đầu lệch
       [12, 'stop sign'],
       [61, 'chair'],
       [62, 'couch'],
@@ -30,22 +30,17 @@ describe('COCO_LABELS khớp bảng nhãn của model', () => {
 
     // Assert
     for (const [index, label] of expected) {
-      expect(COCO_LABELS[index]).toBe(label);
+      expect(COCO_90_LABELS[index]).toBe(label);
     }
   });
 
-  test('mọi nhãn không rỗng đều có bản dịch tiếng Việt', () => {
+  test('mọi nhãn không phải ghost đều có bản dịch tiếng Việt', () => {
     // Act
-    const missing = COCO_LABELS.filter(
-      (label) => label !== '' && COCO_LABEL_VI[label] === undefined,
+    const missing = COCO_90_LABELS.filter(
+      (label): label is string => label !== null && COCO_LABEL_VI[label] === undefined,
     );
 
-    // Assert
+    // Assert — thiếu bản dịch nghĩa là vật cản được phát hiện nhưng không đọc được tên.
     expect(missing).toEqual([]);
-  });
-
-  test('ô trống không tra ra nhãn tiếng Việt nào', () => {
-    // Assert — chuỗi rỗng phải là "không rõ vật gì", không phải một tên vật.
-    expect(COCO_LABEL_VI['']).toBeUndefined();
   });
 });

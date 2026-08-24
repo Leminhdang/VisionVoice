@@ -116,17 +116,33 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Chặn request treo vô hạn: sau API_TIMEOUT_MS ném GeminiError('network').
- * Không có timeout thì UI kẹt ở trạng thái "đang phân tích" mà không phát ra
- * âm thanh nào — người dùng khiếm thị không có cách nào biết hay thoát ra.
+ * Chặn treo vĩnh viễn.
+ *
+ * generateContent/sendMessage không có timeout riêng, nên một request kẹt
+ * (mạng lặng, hoặc App Check không lấy được token) sẽ không bao giờ settle:
+ * không lỗi, không phản hồi, UI đứng im. Với người khiếm thị đó là kiểu hỏng
+ * tệ nhất — im lặng và không có lối thoát.
+ *
+ * Ném GeminiError('network') nên toGeminiError trả nguyên vẹn, và
+ * shouldRetryWithFallback trả false — không thử lại model dự phòng, vì như vậy
+ * sẽ nhân đôi thời gian chờ của người dùng.
  */
-function withTimeout<T>(promise: Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timerId = setTimeout(() => {
-      reject(new GeminiError('network', `Quá thời gian chờ ${API_TIMEOUT_MS}ms.`));
+async function withTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new GeminiError('network', `${label} không phản hồi sau ${API_TIMEOUT_MS}ms.`),
+      );
     }, API_TIMEOUT_MS);
-    promise.then(resolve, reject).finally(() => clearTimeout(timerId));
   });
+  try {
+    return await Promise.race([work, expiry]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function logRequest(captureId: number | undefined, kind: 'describe' | 'qa'): void {
@@ -156,7 +172,11 @@ function extractText(response: { text: () => string }): string {
 
 async function requestDescription(modelName: string, image: PreparedImage): Promise<string> {
   const result = await withTimeout(
-    getModel(modelName).generateContent([buildImagePart(image), { text: DESCRIBE_PROMPT }]),
+    getModel(modelName).generateContent([
+      buildImagePart(image),
+      { text: DESCRIBE_PROMPT },
+    ]),
+    'Yêu cầu mô tả ảnh',
   );
   return extractText(result.response);
 }
@@ -234,7 +254,10 @@ export function createQASession(image: PreparedImage): QASession {
         ? [buildImagePart(image), { text: question }]
         : [{ text: question }];
       try {
-        const result = await withTimeout(chat.sendMessage(parts));
+        const result = await withTimeout(
+          chat.sendMessage(parts),
+          'Yêu cầu hỏi đáp',
+        );
         const answer = extractText(result.response);
         isFirstTurn = false;
         logResponse(captureId, { ok: true });

@@ -1,39 +1,44 @@
-import { useIsFocused } from '@react-navigation/native';
-import { useKeepAwake } from 'expo-keep-awake';
-import { useCallback, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { CameraPhotoOutput } from 'react-native-vision-camera';
+import { useIsFocused } from "@react-navigation/native";
+import { useKeepAwake } from "expo-keep-awake";
+import { useCallback, useEffect } from "react";
+import { StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { CameraPhotoOutput } from "react-native-vision-camera";
 
-import { BigActionButton } from '../components/BigActionButton';
-import { CameraViewport } from '../components/CameraViewport';
-import { SeverityBanner } from '../components/SeverityBanner';
-import { OBSTACLE_PHOTO_RESOLUTION } from '../constants/config';
-import { NAV, OBSTACLE } from '../constants/strings';
-import { announceScreen } from '../hooks/useAccessibilityFocus';
-import { useObstacleScanner } from '../hooks/useObstacleScanner';
-import { useVoiceControl } from '../hooks/useVoiceControl';
-import type { ObstacleModeScreenProps } from '../navigation/types';
-import { speakExclusive } from '../services/audioSession';
-import { colors } from '../theme/colors';
-import { SCREEN_PADDING, spacing } from '../theme/spacing';
+import { BigActionButton } from "../components/BigActionButton";
+import { CameraViewport } from "../components/CameraViewport";
+import { SeverityBanner } from "../components/SeverityBanner";
+import { OBSTACLE_CAPTURE_RESOLUTION } from "../constants/config";
+import { NAV, OBSTACLE } from "../constants/strings";
+import { announceScreen } from "../hooks/useAccessibilityFocus";
+import { useObstacleScanner } from "../hooks/useObstacleScanner";
+import { useVoiceControl } from "../hooks/useVoiceControl";
+import type { ObstacleModeScreenProps } from "../navigation/types";
+import { speakExclusive } from "../services/audioSession";
+import { colors } from "../theme/colors";
+import { SCREEN_PADDING, spacing } from "../theme/spacing";
 
 /** Độ mờ lớp phủ tối trên khung camera (~55%). */
 const SCRIM_OPACITY = 0.55;
 
 /**
  * Chế độ dò vật cản: camera chạy nền, useObstacleScanner chụp frame
- * mỗi ~900ms qua photoOutput → TFLite inference → assessment + TTS.
+ * mỗi ~900ms qua photoOutput, decode + resize native, chạy TFLite inference
+ * rồi ra assessment + TTS.
  * Blur → active=false → scanner dừng, không TTS rơi rớt sau khi thoát.
  * Màn hình luôn sáng nhờ useKeepAwake.
  */
-export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenProps) {
+export default function ObstacleModeScreen({
+  navigation,
+}: ObstacleModeScreenProps) {
   useKeepAwake();
 
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const { assessment, setPhotoOutput } = useObstacleScanner({ active: isFocused });
-  const severity = assessment?.severity ?? 'safe';
+  const { assessment, setPhotoOutput } = useObstacleScanner({
+    active: isFocused,
+  });
+  const severity = assessment?.severity ?? "safe";
 
   const exit = useCallback(() => {
     void speakExclusive(OBSTACLE.EXIT);
@@ -58,8 +63,8 @@ export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenPro
     <View style={styles.container}>
       <CameraViewport
         isActive={isFocused}
-        photoResolution={OBSTACLE_PHOTO_RESOLUTION}
         onPhotoOutputReady={handlePhotoOutputReady}
+        targetResolution={OBSTACLE_CAPTURE_RESOLUTION}
       />
       <View pointerEvents="none" style={styles.scrim} />
       <SeverityBanner severity={severity} objectLabel={assessment?.label} />
@@ -67,7 +72,7 @@ export default function ObstacleModeScreen({ navigation }: ObstacleModeScreenPro
         <BigActionButton
           label={OBSTACLE.STOP_BUTTON}
           onPress={exit}
-          variant={severity === 'safe' ? 'danger' : 'secondary'}
+          variant={severity === "safe" ? "danger" : "secondary"}
           accessibilityLabel={OBSTACLE.STOP_BUTTON}
           accessibilityHint={OBSTACLE.STOP_HINT}
         />
@@ -88,7 +93,7 @@ const styles = StyleSheet.create({
   },
   // bottom đặt tại chỗ dùng vì phải cộng thêm safe-area inset (thanh home).
   stopZone: {
-    position: 'absolute',
+    position: "absolute",
     left: SCREEN_PADDING,
     right: SCREEN_PADDING,
   },

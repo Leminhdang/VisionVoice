@@ -1,7 +1,15 @@
-import { forwardRef, useCallback, useEffect, useRef } from 'react';
-import { StyleSheet } from 'react-native';
-import { Camera, useCameraDevice, usePhotoOutput } from 'react-native-vision-camera';
-import type { CameraRef, CameraPhotoOutput } from 'react-native-vision-camera';
+import { forwardRef, useCallback, useEffect, useRef } from "react";
+import { StyleSheet } from "react-native";
+import {
+  Camera,
+  useCameraDevice,
+  usePhotoOutput,
+} from "react-native-vision-camera";
+import type {
+  CameraRef,
+  CameraPhotoOutput,
+  Size,
+} from "react-native-vision-camera";
 
 export interface CameraViewportProps {
   onReady?: () => void;
@@ -10,11 +18,12 @@ export interface CameraViewportProps {
   /** Cho phép truy cập photoOutput từ bên ngoài component. */
   onPhotoOutputReady?: (photoOutput: CameraPhotoOutput) => void;
   /**
-   * Độ phân giải ảnh chụp. Phải là một tham chiếu ỔN ĐỊNH (hằng số ở
-   * constants/config.ts) — usePhotoOutput memo theo identity của object này,
-   * truyền object literal sẽ tạo lại photoOutput mỗi lần render.
+   * Ghi đè độ phân giải chụp. Bỏ trống = mặc định của VisionCamera (UHD 4:3).
+   *
+   * Phải truyền hằng số cấp module — `usePhotoOutput` so sánh giá trị này
+   * theo tham chiếu, object literal inline sẽ gây tạo lại output mỗi render.
    */
-  photoResolution: { width: number; height: number };
+  targetResolution?: Size;
 }
 
 /**
@@ -27,14 +36,14 @@ export interface CameraViewportProps {
  */
 export const CameraViewport = forwardRef<CameraRef, CameraViewportProps>(
   function CameraViewport(
-    { onReady, isActive = true, onPhotoOutputReady, photoResolution },
+    { onReady, isActive = true, onPhotoOutputReady, targetResolution },
     ref,
   ) {
     const innerCameraRef = useRef<CameraRef | null>(null);
-    const device = useCameraDevice('back');
+    const device = useCameraDevice("back");
     const photoOutput = usePhotoOutput({
-      targetResolution: photoResolution,
-      qualityPrioritization: 'speed',
+      targetResolution,
+      qualityPrioritization: "speed",
     });
     const hasReportedRef = useRef(false);
 
@@ -50,7 +59,7 @@ export const CameraViewport = forwardRef<CameraRef, CameraViewportProps>(
     const assignRefs = useCallback(
       (camera: CameraRef | null) => {
         innerCameraRef.current = camera;
-        if (typeof ref === 'function') {
+        if (typeof ref === "function") {
           ref(camera);
         } else if (ref) {
           ref.current = camera;

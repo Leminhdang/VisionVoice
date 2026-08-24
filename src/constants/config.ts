@@ -1,3 +1,6 @@
+import { Platform } from 'react-native';
+import type { TensorflowModelDelegate } from 'react-native-fast-tflite';
+
 // Gemini models (Firebase AI Logic)
 export const GEMINI_MODEL = 'gemini-3.6-flash';
 export const GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
@@ -12,6 +15,33 @@ export const TARGET_PICTURE_SIZE = 1280;
 // Obstacle detection
 export const OBSTACLE_ASSESSMENT_THROTTLE_MS = 900;
 export const TFLITE_MODEL_INPUT_SIZE = 320;
+/**
+ * Độ phân giải chụp cho vòng dò vật cản. Mặc định của VisionCamera là UHD 4:3
+ * (~4080×3060) — thừa thãi vì model chỉ ăn 320×320, mà decode ảnh 12MP tốn
+ * ~700ms/frame và đẩy ION heap lên cao.
+ *
+ * PHẢI là hằng số cấp module: `usePhotoOutput` dùng targetResolution làm
+ * useMemo dependency THEO THAM CHIẾU, nên object literal inline sẽ tạo lại
+ * photo output mỗi lần render (chính là lỗi remount loop đã sửa ở 83336b0).
+ */
+export const OBSTACLE_CAPTURE_RESOLUTION = { width: 640, height: 480 };
+/**
+ * Delegate tăng tốc phần cứng cho TFLite.
+ *
+ * Android cần `enableAndroidGpuLibraries: true` trong app.json để kèm
+ * libOpenCL.so, nếu không `'android-gpu'` sẽ không nạp được. NNAPI bị khai tử
+ * từ Android 15 nên không dùng.
+ *
+ * PHẢI là hằng số cấp module — mảng này là dependency của `useTensorflowModel`,
+ * literal inline sẽ nạp lại model mỗi lần render.
+ */
+export const TFLITE_DELEGATES: TensorflowModelDelegate[] =
+  Platform.select<TensorflowModelDelegate[]>({
+    android: ['android-gpu'],
+    ios: ['core-ml'],
+    default: [],
+  });
+
 export const OBSTACLE_SCORE_MIN = 0.35;
 export const DANGER_AREA_RATIO = 0.35;
 export const WARNING_AREA_RATIO = 0.18;
@@ -33,8 +63,6 @@ export const OBSTACLE_MAX_DETECT_FAILURES = 5;
  */
 // Ảnh gửi Gemini: pipeline hạ về IMAGE_RESIZE_WIDTH nên không cần cao hơn.
 export const CAPTURE_PHOTO_RESOLUTION = { width: 1440, height: 1920 };
-// Khung dò vật cản: model chỉ ăn 320×320, chụp to hơn là phí sạch.
-export const OBSTACLE_PHOTO_RESOLUTION = { width: 480, height: 640 };
 
 // Voice / ASR timing
 export const ASR_RESTART_ON_END_MS = 500;

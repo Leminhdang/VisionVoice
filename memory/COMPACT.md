@@ -9,7 +9,7 @@ VisionVoice v2 — Expo dev client · RN · TS strict · RNFB (Gemini qua Fireba
 
 ## Active Task
 
-Không có task triển khai đang hoạt động. Bản báo cáo ưu tiên là `BaoCao_DATN_VisionVoice_60Trang.docx` với 15.505 từ, 9 bảng nội dung và 11 vị trí hình; hai bản dài hơn vẫn được giữ để đối chiếu. Báo cáo còn placeholder cho thông tin cá nhân, hình và kết quả thực nghiệm Chương 5.
+**Fix obstacle detection** — TFLite EfficientDet-Lite0 chạy nhưng trả 0 detections. Root cause: `Photo.getPixelBuffer()` trên Android trả YUV_420_888 (không phải RGBA). Đã thêm `yuvToRgbResized()` nhưng CHƯA XÁC NHẬN score range cải thiện. **ĐỌC `memory/handoff.md` CHI TIẾT TRƯỚC KHI LÀM.**
 
 ## Critical Rules (top 5 lessons)
 
@@ -21,10 +21,11 @@ Không có task triển khai đang hoạt động. Bản báo cáo ưu tiên là
 
 ## Blockers
 
-- Chưa xác nhận trong phiên gần nhất: Gemini/App Check, ASR/TTS, camera và ML Kit trên máy Android/iOS thật.
-- Worktree có thay đổi chưa commit của user: `config.ts`, `HomeCameraScreen.tsx`, `audioSession.ts`; phải bảo toàn.
-- `.githooks/pre-commit` calls `memory/validate.sh`, which does not exist — hook silently no-ops.
+- Obstacle detection: pixel buffer format (YUV vs JPEG?) chưa 100% confirmed — cần log first bytes
+- Packages thừa trong package.json: `react-native-vision-camera-worklets`, `react-native-worklets` (frame processor approach failed)
+- iOS prebuild fails (missing RNWorklets pod) — chỉ Android hoạt động
+- `babel.config.js` mới tạo với `react-native-worklets/plugin` — cần `--reset-cache` khi start Metro
 
 ## Last Session
 
-2026-08-12 — Tạo `BaoCao_DATN_VisionVoice_60Trang.docx`, rút xuống 15.505 từ để dành khoảng 10–15 trang cho hình và phụ lục. Bỏ bốn mockup trùng lặp; giữ 9 bảng, 11 vị trí hình và 26 tài liệu được trích dẫn. Đoạn dài nhất 130 từ; DOCX hợp lệ, đúng lề và mở được bằng Quick Look. Không sửa source ứng dụng.
+2026-08-12 — Debug obstacle detection. Discovered `Photo.getPixelBuffer()` returns YUV on Android (not RGBA). Tried frame processor approach (`useFrameOutput`) — onFrame never fired. Reverted to capturePhoto + YUV→RGB conversion. Model loads via `useTensorflowModel` hook (moved from App.tsx init). Score range still very low (max 0.07). Need to verify YUV conversion or check if buffer is actually JPEG.

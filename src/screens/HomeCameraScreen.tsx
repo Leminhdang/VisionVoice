@@ -251,7 +251,7 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
       <CameraViewport
         ref={cameraRef}
         isActive={isFocused}
-        photoResolution={CAPTURE_PHOTO_RESOLUTION}
+        targetResolution={CAPTURE_PHOTO_RESOLUTION}
         onPhotoOutputReady={(output) => { photoOutputRef.current = output; }}
       />
       <View style={styles.scrimTop} pointerEvents="none" />
