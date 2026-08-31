@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { QA_RELISTEN_DELAY_MS } from '../constants/config';
+import { QA_RELISTEN_DELAY_MS, QA_SILENCE_COMMIT_MS } from '../constants/config';
 import { ERRORS, QA } from '../constants/strings';
 import * as audioSession from '../services/audioSession';
 import { hapticStop, playListenEnd, playListenStart } from '../services/feedback';
@@ -57,6 +57,8 @@ export function useQASession(
   const statusRef = useRef<QAStatus>('idle');
   const mountedRef = useRef(true);
   const relistenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTranscriptRef = useRef('');
   const onExitIntentRef = useRef<(() => void) | undefined>(undefined);
   const captureIdRef = useRef(DEFAULT_CAPTURE_ID);
 
@@ -94,19 +96,66 @@ export function useQASession(
       return;
     }
     clearRelistenTimer();
+    clearSilenceTimer();
+    pendingTranscriptRef.current = '';
     void playListenStart();
     void hapticStop();
     updateStatus('listening');
     void audioSession.startListening(handleTranscript);
   }
 
+  function clearSilenceTimer(): void {
+    if (silenceTimerRef.current !== null) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }
+
+  /**
+   * Ở chế độ `continuous` trên Android, engine phát kết quả tạm thời liên tục
+   * còn `isFinal` chỉ đến khi nó tự chốt đoạn — có thể rất trễ hoặc không bao
+   * giờ, nên chờ `isFinal` là câm hẳn (đúng lỗi đã gặp ở màn lệnh giọng nói).
+   *
+   * Nhưng khác màn lệnh, ở đây KHÔNG thể dùng ngay kết quả tạm thời: gửi
+   * "cái này là" thay vì "cái này là cái gì" lên Gemini là hỏng câu hỏi. Nên
+   * bản tạm thời được giữ lại và chỉ chốt khi người dùng đã ngừng nói
+   * QA_SILENCE_COMMIT_MS — hoặc chốt ngay nếu engine chịu trả `isFinal`.
+   *
+   * Riêng lệnh thoát được nhận ngay trên bản tạm thời: "quay lại" không phải
+   * câu hỏi nên không cần chờ nói hết, và bắt người khiếm thị đợi thêm hơn
+   * một giây mới thoát được là tệ.
+   */
   function handleTranscript(text: string, isFinal: boolean): void {
-    // Interim results are ignored; so is anything arriving outside the
-    // listening state (e.g. stray results while thinking/answering).
-    if (!isFinal || statusRef.current !== 'listening') {
+    if (statusRef.current !== 'listening') {
       return;
     }
-    void processTranscript(text);
+
+    const intent = parseIntent(text);
+    if (intent === 'back' || intent === 'stop') {
+      clearSilenceTimer();
+      pendingTranscriptRef.current = '';
+      onExitIntentRef.current?.();
+      return;
+    }
+
+    if (isFinal) {
+      clearSilenceTimer();
+      pendingTranscriptRef.current = '';
+      void processTranscript(text);
+      return;
+    }
+
+    pendingTranscriptRef.current = text;
+    clearSilenceTimer();
+    silenceTimerRef.current = setTimeout(() => {
+      silenceTimerRef.current = null;
+      const pending = pendingTranscriptRef.current;
+      pendingTranscriptRef.current = '';
+      if (!mountedRef.current || statusRef.current !== 'listening') {
+        return;
+      }
+      void processTranscript(pending);
+    }, QA_SILENCE_COMMIT_MS);
   }
 
   async function processTranscript(transcript: string): Promise<void> {
@@ -179,6 +228,8 @@ export function useQASession(
 
   function endImpl(): void {
     clearRelistenTimer();
+    clearSilenceTimer();
+    pendingTranscriptRef.current = '';
     // Lift any suspension BEFORE stopListening so audioSession is left in a
     // clean state for the next screen (stopListening clears the restart it
     // may schedule).

@@ -66,6 +66,7 @@ export const CAPTURE = {
     "Nói 'hỏi' để đặt câu hỏi, 'chụp tiếp' để chụp ảnh mới, hoặc 'đọc lại' để nghe lại.",
   BACK_TO_CAMERA: 'Đã quay lại chế độ máy ảnh.',
   NO_IMAGE_YET: 'Chưa có ảnh nào. Hãy chụp ảnh trước.',
+  IMAGE_LABEL: 'Ảnh vừa chụp',
 };
 
 export const HOME = {
@@ -120,6 +121,9 @@ export const ERRORS = {
     'Vui lòng cài Google Text-to-Speech và dữ liệu tiếng Việt trong phần Cài đặt điện thoại.',
   GALLERY: 'Không thể mở thư viện ảnh.',
   CAMERA_NOT_READY: 'Máy ảnh chưa sẵn sàng. Vui lòng chờ một chút rồi thử lại.',
+  ASR_STOPPED:
+    'Đã tạm dừng nhận lệnh bằng giọng nói do lỗi liên tiếp. ' +
+    'Bạn vẫn dùng được các nút trên màn hình.',
 };
 
 export const SETTINGS = {

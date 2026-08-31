@@ -59,12 +59,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
+  // minHeight chứ không phải height: token là SÀN vùng chạm, không phải trần.
+  // Người nhìn kém thường bật cỡ chữ hệ thống rất lớn; khoá chiều cao thì nhãn
+  // bị cắt cụt đúng ở nhóm người dùng cần đọc được nó nhất.
   heightFull: {
-    height: TARGET_PRIMARY,
+    minHeight: TARGET_PRIMARY,
   },
   heightCompact: {
-    height: TARGET_SECONDARY,
+    minHeight: TARGET_SECONDARY,
   },
   primary: {
     backgroundColor: colors.accentDeep,

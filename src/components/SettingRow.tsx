@@ -123,7 +123,9 @@ const styles = StyleSheet.create({
   },
   stepButton: {
     width: TARGET_SECONDARY,
-    height: TARGET_SECONDARY,
+    // Xem ghi chú minHeight ở BigActionButton — dấu +/− dùng cỡ display,
+    // phóng to theo hệ thống sẽ tràn khỏi ô vuông cố định.
+    minHeight: TARGET_SECONDARY,
     borderRadius: radius,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -153,7 +155,8 @@ const styles = StyleSheet.create({
   },
   segmentButton: {
     flex: 1,
-    height: TARGET_SECONDARY,
+    minHeight: TARGET_SECONDARY,
+    paddingVertical: spacing.sm,
     borderRadius: radius,
     alignItems: 'center',
     justifyContent: 'center',

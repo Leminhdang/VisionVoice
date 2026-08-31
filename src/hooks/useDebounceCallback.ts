@@ -11,7 +11,6 @@ export function useDebounceCallback<T extends (...args: unknown[]) => void>(
     (...args: Parameters<T>) => {
       const now = Date.now();
       if (now - lastCalledRef.current < delay) {
-        console.log('[Debounce] Ignored – too soon.');
         return;
       }
       lastCalledRef.current = now;

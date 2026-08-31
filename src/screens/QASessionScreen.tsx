@@ -193,7 +193,7 @@ function QASessionLayout({
   const insets = useSafeAreaInsets();
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { height: HEADER_HEIGHT + insets.top, paddingTop: insets.top }]}>
+      <View style={[styles.header, { minHeight: HEADER_HEIGHT + insets.top, paddingTop: insets.top }]}>
         <View style={styles.backWrap}>
           <BigActionButton
             label={QA.BACK}
@@ -223,7 +223,7 @@ function QASessionLayout({
       <Pressable
         style={({ pressed }) => [
           styles.micZone,
-          { height: SHUTTER_ZONE + insets.bottom, paddingBottom: insets.bottom },
+          { minHeight: SHUTTER_ZONE + insets.bottom, paddingBottom: insets.bottom },
           pressed && !isMicDisabled && styles.micZonePressed,
         ]}
         onPressIn={onMicPressIn}

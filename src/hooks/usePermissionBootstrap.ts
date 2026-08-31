@@ -3,7 +3,8 @@ import { useCameraPermission } from 'react-native-vision-camera';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 
 import { ERRORS, PERMISSIONS } from '../constants/strings';
-import { checkVietnameseVoice, speak } from '../services/tts';
+import { speakExclusive } from '../services/audioSession';
+import { checkVietnameseVoice } from '../services/tts';
 
 /**
  * Spoken permission bootstrap for blind users: announce why a permission is
@@ -60,14 +61,14 @@ export function usePermissionBootstrap(): PermissionBootstrapState {
         let isMicGranted = micStatus.granted;
 
         if (!isMicGranted) {
-          await speak(PERMISSIONS.MIC_REQUEST);
+          await speakExclusive(PERMISSIONS.MIC_REQUEST);
           await trackedDelay(PERMISSION_PROMPT_DELAY_MS);
           if (isCancelledRef.current) return;
           const micResult = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
           isMicGranted = micResult.granted;
         }
         if (!isMicGranted) {
-          await speak(PERMISSIONS.MIC_DENIED);
+          await speakExclusive(PERMISSIONS.MIC_DENIED);
         }
         setMicGranted(isMicGranted);
 
@@ -78,7 +79,7 @@ export function usePermissionBootstrap(): PermissionBootstrapState {
         let isCameraGranted = cameraPermission.hasPermission;
 
         if (!isCameraGranted) {
-          await speak(PERMISSIONS.CAMERA_REQUEST);
+          await speakExclusive(PERMISSIONS.CAMERA_REQUEST);
           await trackedDelay(PERMISSION_PROMPT_DELAY_MS);
           if (isCancelledRef.current) return;
           isCameraGranted = await cameraPermission.requestPermission();
@@ -88,14 +89,14 @@ export function usePermissionBootstrap(): PermissionBootstrapState {
         setReady(true);
 
         if (!isCameraGranted) {
-          await speak(PERMISSIONS.CAMERA_DENIED);
+          await speakExclusive(PERMISSIONS.CAMERA_DENIED);
           return;
         }
 
-        await speak(PERMISSIONS.WELCOME);
+        await speakExclusive(PERMISSIONS.WELCOME);
         const hasVietnameseVoice = await checkVietnameseVoice();
         if (!hasVietnameseVoice && !isCancelledRef.current) {
-          await speak(ERRORS.NO_VI_VOICE);
+          await speakExclusive(ERRORS.NO_VI_VOICE);
         }
       } catch (err) {
         console.warn('Lỗi khi xin quyền:', err);

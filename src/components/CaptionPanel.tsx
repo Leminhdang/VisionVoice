@@ -1,5 +1,6 @@
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { CAPTURE } from '../constants/strings';
 import { colors } from '../theme/colors';
 import { radiusLg, spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
@@ -15,7 +16,14 @@ const IMAGE_ASPECT_RATIO = 4 / 3;
 export function CaptionPanel({ imageUri, caption, isLoading }: CaptionPanelProps) {
   return (
     <View style={styles.container}>
-      <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+      <Image
+        source={{ uri: imageUri }}
+        style={styles.image}
+        resizeMode="cover"
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={CAPTURE.IMAGE_LABEL}
+      />
       <View style={styles.card}>
         {isLoading ? (
           <ActivityIndicator size="large" color={colors.accent} style={styles.spinner} />

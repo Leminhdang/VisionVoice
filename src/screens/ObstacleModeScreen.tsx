@@ -59,11 +59,16 @@ export default function ObstacleModeScreen({
     [setPhotoOutput],
   );
 
+  const handlePhotoOutputLost = useCallback(() => {
+    setPhotoOutput(null);
+  }, [setPhotoOutput]);
+
   return (
     <View style={styles.container}>
       <CameraViewport
         isActive={isFocused}
         onPhotoOutputReady={handlePhotoOutputReady}
+        onPhotoOutputLost={handlePhotoOutputLost}
         targetResolution={OBSTACLE_CAPTURE_RESOLUTION}
       />
       <View pointerEvents="none" style={styles.scrim} />

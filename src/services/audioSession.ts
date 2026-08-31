@@ -13,6 +13,7 @@ import {
   SPEECH_RECOGNITION_LOCALE,
   TTS_GUARD_DELAY_MS,
 } from '../constants/config';
+import { ERRORS } from '../constants/strings';
 import * as tts from './tts';
 
 /**
@@ -238,6 +239,10 @@ function handleError(event: ExpoSpeechRecognitionErrorEvent): void {
     console.warn(
       `Nhận dạng giọng nói: ${consecutiveErrors} lỗi liên tiếp, tạm dừng thử lại.`,
     );
+    // Bỏ cuộc trong im lặng nghĩa là người khiếm thị nói lệnh mãi mà không
+    // hiểu vì sao không có gì xảy ra — phải nói ra là mic đã ngừng.
+    wantListening = false;
+    void speakExclusive(ERRORS.ASR_STOPPED);
     traceVoice('recognition_gave_up', { consecutiveErrors, error: event.error });
     return;
   }

@@ -1,4 +1,9 @@
-import { TTS_GUARD_DELAY_MS } from '../../constants/config';
+import {
+  ASR_MAX_BACKOFF_MS,
+  ASR_MAX_CONSECUTIVE_ERRORS,
+  TTS_GUARD_DELAY_MS,
+} from '../../constants/config';
+import { ERRORS } from '../../constants/strings';
 
 /**
  * Guards the half-duplex invariant: the mic must never be open while the app
@@ -12,8 +17,18 @@ interface ResultEvent {
   isFinal: boolean;
 }
 
+interface ErrorEvent {
+  error: string;
+  message: string;
+}
+
+/**
+ * addListener nhận nhiều loại sự kiện khác nhau nên chỗ lưu callback dùng
+ * `unknown`; kiểu thật được giữ ở các hàm emit* bên dưới, nơi sự kiện được dựng.
+ */
 interface Listeners {
-  result?: (event: ResultEvent) => void;
+  result?: (event: unknown) => void;
+  error?: (event: unknown) => void;
 }
 
 const mockRecognitionModule = {
@@ -51,21 +66,31 @@ function deferSpeech(): () => void {
 }
 
 function emitFinalResult(transcript: string): void {
-  listeners.result?.({ results: [{ transcript }], isFinal: true });
+  const event: ResultEvent = { results: [{ transcript }], isFinal: true };
+  listeners.result?.(event);
+}
+
+function emitError(error: string): void {
+  const event: ErrorEvent = { error, message: error };
+  listeners.error?.(event);
 }
 
 beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   delete listeners.result;
+  delete listeners.error;
   // audioSession ghi nhật ký VVASR ra console — chặn để output test sạch.
   jest.spyOn(console, 'log').mockImplementation(() => {});
 
   mockRecognitionModule.requestPermissionsAsync.mockResolvedValue({ granted: true });
   mockRecognitionModule.addListener.mockImplementation(
-    (name: string, callback: (event: ResultEvent) => void) => {
+    (name: string, callback: (event: unknown) => void) => {
       if (name === 'result') {
         listeners.result = callback;
+      }
+      if (name === 'error') {
+        listeners.error = callback;
       }
       return { remove: jest.fn() };
     },
@@ -186,5 +211,39 @@ describe('startListening / stopListening', () => {
 
     // Assert
     expect(onTranscript).not.toHaveBeenCalled();
+  });
+});
+
+describe('ASR lỗi liên tiếp', () => {
+  test('nói cho người dùng biết khi ngừng nhận lệnh, thay vì im lặng', async () => {
+    // Arrange
+    await audioSession.startListening(jest.fn());
+    mockTts.speak.mockClear();
+
+    // Act — vượt ngưỡng ASR_MAX_CONSECUTIVE_ERRORS.
+    for (let i = 0; i <= ASR_MAX_CONSECUTIVE_ERRORS; i++) {
+      emitError('network');
+      jest.advanceTimersByTime(ASR_MAX_BACKOFF_MS);
+    }
+
+    // Assert — im lặng ở đây là người khiếm thị nói lệnh mãi mà không hiểu
+    // vì sao không có gì xảy ra.
+    expect(mockTts.speak).toHaveBeenCalledWith(ERRORS.ASR_STOPPED, undefined);
+  });
+
+  test('không thử mở lại mic sau khi đã bỏ cuộc', async () => {
+    // Arrange
+    await audioSession.startListening(jest.fn());
+    for (let i = 0; i <= ASR_MAX_CONSECUTIVE_ERRORS; i++) {
+      emitError('network');
+      jest.advanceTimersByTime(ASR_MAX_BACKOFF_MS);
+    }
+    mockRecognitionModule.start.mockClear();
+
+    // Act
+    jest.advanceTimersByTime(ASR_MAX_BACKOFF_MS * 4);
+
+    // Assert
+    expect(mockRecognitionModule.start).not.toHaveBeenCalled();
   });
 });

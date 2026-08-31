@@ -3550,6 +3550,11 @@ expo-dev-menu@~56.0.21:
   dependencies:
     expo-dev-menu-interface "~56.0.0"
 
+expo-file-system@~56.0.10:
+  version "56.0.10"
+  resolved "https://registry.yarnpkg.com/expo-file-system/-/expo-file-system-56.0.10.tgz#7a99d91e1496f0ce7676d142bcea1a1de3c9309d"
+  integrity sha512-qXX6lGnt0nIouZJMaaxqEMiWvDRTk+1aQxCzowZiZ22xD5VQIa25glX1/d+YpUhuB8Rh5auSdgFUbH+xliL+rg==
+
 expo-file-system@~56.0.9:
   version "56.0.9"
   resolved "https://registry.yarnpkg.com/expo-file-system/-/expo-file-system-56.0.9.tgz#bd65520f9a9b1604f32a59e19a67faaa3b96ad47"

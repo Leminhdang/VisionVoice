@@ -71,6 +71,11 @@ export const ASR_MAX_CONSECUTIVE_ERRORS = 5;
 export const ASR_MAX_BACKOFF_MS = 30_000;
 export const TTS_GUARD_DELAY_MS = 400;
 export const QA_RELISTEN_DELAY_MS = 800;
+/**
+ * Câu hỏi được chốt sau khi người dùng ngừng nói bấy nhiêu mili giây.
+ * Cần thiết vì ASR `continuous` trên Android có thể không bao giờ gửi isFinal.
+ */
+export const QA_SILENCE_COMMIT_MS = 1200;
 /** Chặn một lệnh giọng nói lặp lại — xem ghi chú trong useVoiceControl. */
 export const VOICE_INTENT_COOLDOWN_MS = 2000;
 

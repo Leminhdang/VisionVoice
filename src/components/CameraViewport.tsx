@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef } from "react";
 import { StyleSheet } from "react-native";
 import {
   Camera,
@@ -15,8 +15,13 @@ export interface CameraViewportProps {
   onReady?: () => void;
   /** Tắt camera (khi screen không focus). Mặc định true. */
   isActive?: boolean;
-  /** Cho phép truy cập photoOutput từ bên ngoài component. */
+  /**
+   * Cấp photoOutput cho màn hình. Được gọi lại MỖI lần session khởi động,
+   * không chỉ lần đầu — xem ghi chú ở handleStarted.
+   */
   onPhotoOutputReady?: (photoOutput: CameraPhotoOutput) => void;
+  /** Session dừng hoặc lỗi: tham chiếu photoOutput hiện tại đã chết. */
+  onPhotoOutputLost?: () => void;
   /**
    * Ghi đè độ phân giải chụp. Bỏ trống = mặc định của VisionCamera (UHD 4:3).
    *
@@ -36,7 +41,13 @@ export interface CameraViewportProps {
  */
 export const CameraViewport = forwardRef<CameraRef, CameraViewportProps>(
   function CameraViewport(
-    { onReady, isActive = true, onPhotoOutputReady, targetResolution },
+    {
+      onReady,
+      isActive = true,
+      onPhotoOutputReady,
+      onPhotoOutputLost,
+      targetResolution,
+    },
     ref,
   ) {
     const innerCameraRef = useRef<CameraRef | null>(null);
@@ -45,14 +56,15 @@ export const CameraViewport = forwardRef<CameraRef, CameraViewportProps>(
       targetResolution,
       qualityPrioritization: "speed",
     });
-    const hasReportedRef = useRef(false);
+    const hasReportedReadyRef = useRef(false);
 
-    // Tắt camera (rời màn hình) huỷ session hiện tại; lần bật lại sẽ có
-    // photoOutput mới. Không mở cờ ra thì màn hình giữ tham chiếu output đã
-    // chết và mọi lệnh chụp sau đó đều hỏng.
+    // `outputs` là dependency của useCamera nên phải giữ tham chiếu ổn định;
+    // mảng literal inline làm session bị cấu hình lại mỗi lần render.
+    const outputs = useMemo(() => [photoOutput], [photoOutput]);
+
     useEffect(() => {
       if (!isActive) {
-        hasReportedRef.current = false;
+        hasReportedReadyRef.current = false;
       }
     }, [isActive]);
 
@@ -69,12 +81,33 @@ export const CameraViewport = forwardRef<CameraRef, CameraViewportProps>(
     );
 
     const handleStarted = useCallback(() => {
-      if (!hasReportedRef.current) {
-        hasReportedRef.current = true;
+      // onReady chỉ một lần mỗi lần bật, nhưng photoOutput thì cấp lại MỖI
+      // lần session khởi động: rời màn hình rồi quay lại là một session mới,
+      // tham chiếu cũ đã chết và mọi lệnh chụp lên nó đều hỏng.
+      if (!hasReportedReadyRef.current) {
+        hasReportedReadyRef.current = true;
         onReady?.();
-        onPhotoOutputReady?.(photoOutput);
       }
+      onPhotoOutputReady?.(photoOutput);
     }, [onReady, onPhotoOutputReady, photoOutput]);
+
+    const handleStopped = useCallback(() => {
+      onPhotoOutputLost?.();
+    }, [onPhotoOutputLost]);
+
+    // Không có các handler này thì camera hỏng hoàn toàn im lặng: màn hình
+    // đen thui mà không một dòng log nào cho biết vì sao.
+    const handleError = useCallback(
+      (error: Error) => {
+        console.warn("Lỗi camera:", error.message);
+        onPhotoOutputLost?.();
+      },
+      [onPhotoOutputLost],
+    );
+
+    const handleInterruptionStarted = useCallback((reason: unknown) => {
+      console.warn("Camera bị gián đoạn:", String(reason));
+    }, []);
 
     if (device == null) return null;
 
@@ -84,8 +117,11 @@ export const CameraViewport = forwardRef<CameraRef, CameraViewportProps>(
         style={StyleSheet.absoluteFill}
         device={device}
         isActive={isActive}
-        outputs={[photoOutput]}
+        outputs={outputs}
         onStarted={handleStarted}
+        onStopped={handleStopped}
+        onError={handleError}
+        onInterruptionStarted={handleInterruptionStarted}
       />
     );
   },

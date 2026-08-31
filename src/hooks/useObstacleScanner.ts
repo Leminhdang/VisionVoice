@@ -17,7 +17,7 @@ import {
   createAnnouncementPolicy,
 } from '../services/obstacleDetector';
 import type { AnnouncementPolicy, Assessment } from '../services/obstacleDetector';
-import { parseDetections } from '../services/tfliteDetector';
+import { parseDetections, readTopScore } from '../services/tfliteDetector';
 import { useSettings } from '../state/SettingsContext';
 
 interface UseObstacleScannerOptions {
@@ -63,7 +63,7 @@ async function announceAssessment(assessment: Assessment): Promise<void> {
 export function useObstacleScanner(
   opts: UseObstacleScannerOptions,
 ): UseObstacleScannerResult & {
-  setPhotoOutput: (output: CameraPhotoOutput) => void;
+  setPhotoOutput: (output: CameraPhotoOutput | null) => void;
 } {
   const { active } = opts;
   const { settings } = useSettings();
@@ -81,7 +81,7 @@ export function useObstacleScanner(
     sensitivityRef.current = settings.obstacleSensitivity;
   }, [settings.obstacleSensitivity]);
 
-  const setPhotoOutput = useCallback((output: CameraPhotoOutput) => {
+  const setPhotoOutput = useCallback((output: CameraPhotoOutput | null) => {
     photoOutputRef.current = output;
   }, []);
 
@@ -101,6 +101,28 @@ export function useObstacleScanner(
       console.log('[TFLite] outputs', JSON.stringify(tfModel.model.outputs));
     }
   }, [tfModel.model]);
+
+  /**
+   * Model nạp hỏng là hỏng vĩnh viễn — vòng quét bên dưới chỉ thấy
+   * `model == null` nên sẽ lặp vô hạn trong im lặng, và người dùng chỉ nghe
+   * lời giới thiệu rồi không gì nữa. Delegate GPU từ chối model lượng tử hoá
+   * là đường hỏng dễ xảy ra nhất (tài liệu fast-tflite ghi rõ delegate tăng
+   * tốc "không chạy được với mọi model"), nên phải bắt riêng và nói ra.
+   */
+  useEffect(() => {
+    if (!active || tfModel.state !== 'error') {
+      return;
+    }
+    console.warn('Lỗi khi nạp model dò vật cản:', tfModel.error);
+    logMetric({
+      event: 'app_error',
+      where: 'obstacle_model_load',
+      message: String(tfModel.error?.message ?? tfModel.error),
+    });
+    isCyclingRef.current = false;
+    hapticForSeverity('danger');
+    void speakExclusive(OBSTACLE.DETECTOR_FAILED, { flush: true });
+  }, [active, tfModel]);
 
   useEffect(() => {
     if (!active) {
@@ -175,6 +197,7 @@ export function useObstacleScanner(
           frameId,
           detectMs,
           detections: objects.length,
+          topScore: Number(readTopScore(outputs).toFixed(3)),
         });
 
         const result = assessDetections(

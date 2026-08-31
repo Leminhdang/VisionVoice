@@ -31,6 +31,8 @@ export type MetricEvent =
       frameId: number;
       detectMs: number;
       detections: number;
+      /** Điểm cao nhất trước khi lọc ngưỡng — xem readTopScore(). */
+      topScore: number;
     }
   // Khung không dò được (model chưa nạp / lỗi inference). Tách khỏi
   // obstacle_frame để số liệu detections không bị pha tạp.

@@ -17,6 +17,23 @@ import type { DetectedObject } from './obstacleDetector';
 const EXPECTED_OUTPUT_COUNT = 4;
 
 /**
+ * Điểm tin cậy cao nhất trong khung, TRƯỚC khi lọc ngưỡng.
+ *
+ * `detections: 0` một mình không phân biệt được ba trường hợp hoàn toàn khác
+ * nhau: model không thấy gì, model có thấy nhưng dưới OBSTACLE_SCORE_MIN, hay
+ * thứ tự tensor đầu ra bị đọc sai. Điểm thô này tách bạch cả ba.
+ */
+export function readTopScore(outputData: ArrayBuffer[]): number {
+  if (outputData.length < EXPECTED_OUTPUT_COUNT) return 0;
+  const scores = new Float32Array(outputData[2]);
+  let top = 0;
+  for (let i = 0; i < scores.length; i++) {
+    if (scores[i] > top) top = scores[i];
+  }
+  return top;
+}
+
+/**
  * Parse output tensors → DetectedObject[].
  *
  * Chỉ đọc `count` slot đầu tiên — các slot còn lại trong tensor là rác đệm.

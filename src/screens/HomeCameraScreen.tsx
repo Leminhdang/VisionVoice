@@ -180,6 +180,13 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
     }
   }, [canCapture, dispatch, analyzeAndSpeak]);
 
+  const handlePhotoOutputReady = useCallback((output: CameraPhotoOutput) => {
+    photoOutputRef.current = output;
+  }, []);
+  const handlePhotoOutputLost = useCallback(() => {
+    photoOutputRef.current = null;
+  }, []);
+
   const handleGallery = useCallback(() => void pickImage(), [pickImage]);
   const handleShutterPress = useCallback(() => captureFlow('button'), [captureFlow]);
   const handleVoiceCapture = useCallback(() => captureFlow('voice'), [captureFlow]);
@@ -252,7 +259,8 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
         ref={cameraRef}
         isActive={isFocused}
         targetResolution={CAPTURE_PHOTO_RESOLUTION}
-        onPhotoOutputReady={(output) => { photoOutputRef.current = output; }}
+        onPhotoOutputReady={handlePhotoOutputReady}
+        onPhotoOutputLost={handlePhotoOutputLost}
       />
       <View style={styles.scrimTop} pointerEvents="none" />
       <View style={styles.scrimBottom} pointerEvents="none" />
