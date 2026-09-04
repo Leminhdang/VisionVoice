@@ -93,8 +93,11 @@ export const DEFAULT_TTS_PITCH = 1.0;
 // Modes
 export const MOCK_MODE: boolean = false;
 export const METRICS_ENABLED = true;
-/** Nhật ký chẩn đoán luồng nhận dạng giọng nói — lọc bằng `adb logcat | grep VVASR`. */
-export const ASR_TRACE_ENABLED = true;
+/**
+ * Nhật ký chẩn đoán luồng nhận dạng giọng nói — lọc bằng `adb logcat | grep VVASR`.
+ * Mặc định TẮT vì rất ồn; bật lên khi cần dựng lại lỗi "không nhận lệnh".
+ */
+export const ASR_TRACE_ENABLED = false;
 
 // Mock data
 export const MOCK_DESCRIPTION =

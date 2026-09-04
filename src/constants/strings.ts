@@ -140,7 +140,7 @@ export const SETTINGS = {
   TEST_SENTENCE: 'Đây là giọng đọc của VisionVoice.',
   ABOUT:
     'VisionVoice — mô tả ảnh và hỏi đáp bằng Gemini qua Firebase AI Logic, ' +
-    'cảnh báo vật cản bằng MediaPipe trên thiết bị.',
+    'cảnh báo vật cản bằng TensorFlow Lite trên thiết bị.',
   EXIT: 'Đã đóng cài đặt.',
   SAMPLE_RATE: 'Đây là tốc độ đọc mới.',
   SAMPLE_PITCH: 'Đây là cao độ giọng mới.',

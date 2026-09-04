@@ -16,6 +16,86 @@ import type { DetectedObject } from './obstacleDetector';
 /** Số tensor output mà model có NMS dựng sẵn phải trả về. */
 const EXPECTED_OUTPUT_COUNT = 4;
 
+/** Bốn tensor đầu ra đã được nhận dạng theo vai trò, không theo chỉ số. */
+interface ResolvedOutputs {
+  boxes: Float32Array;
+  categories: Float32Array;
+  scores: Float32Array;
+  count: number;
+}
+
+/**
+ * Nhận dạng vai trò từng tensor đầu ra bằng HÌNH DẠNG và MIỀN GIÁ TRỊ, thay vì
+ * tin vào thứ tự chỉ số.
+ *
+ * Thứ tự tensor của các bản build EfficientDet/SSD khác nhau không thống nhất,
+ * và đọc nhầm thứ tự KHÔNG gây lỗi — nó chỉ lặng lẽ cho ra 0 vật cản, đúng
+ * kiểu hỏng nguy hiểm nhất ở tính năng này (im lặng bị hiểu là "đường trống").
+ * Không có thiết bị thì không cách nào kiểm chứng thứ tự, nên tự suy ra:
+ *
+ * - `count`  — mảng duy nhất có độ dài 1
+ * - `boxes`  — độ dài gấp 4 lần hai mảng còn lại
+ * - `scores` / `categories` — cùng độ dài N; điểm luôn nằm trong [0,1] còn
+ *   lớp là số nguyên có thể vượt 1, nên giá trị > 1 là dấu hiệu của lớp, và
+ *   giá trị không nguyên là dấu hiệu của điểm.
+ *
+ * Không phân định được thì giữ nguyên thứ tự ghi trong metadata của model.
+ */
+function resolveOutputs(outputData: ArrayBuffer[]): ResolvedOutputs | null {
+  if (outputData.length < EXPECTED_OUTPUT_COUNT) return null;
+  const arrays = outputData.map((buffer) => new Float32Array(buffer));
+
+  const countIndex = arrays.findIndex((a) => a.length === 1);
+  const rest = arrays.filter((_, i) => i !== countIndex);
+  if (countIndex === -1 || rest.length !== 3) {
+    return fallbackOrder(arrays);
+  }
+
+  const perDetectionLength = Math.min(...rest.map((a) => a.length));
+  const boxes = rest.find((a) => a.length === perDetectionLength * 4);
+  const pair = rest.filter((a) => a.length === perDetectionLength);
+  if (boxes === undefined || pair.length !== 2) {
+    return fallbackOrder(arrays);
+  }
+
+  const [first, second] = pair;
+  const hasValueAboveOne = (a: Float32Array): boolean => a.some((v) => v > 1);
+  const hasFraction = (a: Float32Array): boolean => a.some((v) => !Number.isInteger(v));
+
+  let categories = first;
+  let scores = second;
+  if (hasValueAboveOne(first)) {
+    categories = first;
+    scores = second;
+  } else if (hasValueAboveOne(second)) {
+    categories = second;
+    scores = first;
+  } else if (hasFraction(first) && !hasFraction(second)) {
+    scores = first;
+    categories = second;
+  } else if (hasFraction(second) && !hasFraction(first)) {
+    scores = second;
+    categories = first;
+  }
+
+  return {
+    boxes,
+    categories,
+    scores,
+    count: Math.round(arrays[countIndex][0] ?? 0),
+  };
+}
+
+/** Thứ tự ghi trong TFLITE_METADATA: location, category, score, count. */
+function fallbackOrder(arrays: Float32Array[]): ResolvedOutputs {
+  return {
+    boxes: arrays[0],
+    categories: arrays[1],
+    scores: arrays[2],
+    count: Math.round(arrays[3][0] ?? 0),
+  };
+}
+
 /**
  * Điểm tin cậy cao nhất trong khung, TRƯỚC khi lọc ngưỡng.
  *
@@ -24,11 +104,11 @@ const EXPECTED_OUTPUT_COUNT = 4;
  * thứ tự tensor đầu ra bị đọc sai. Điểm thô này tách bạch cả ba.
  */
 export function readTopScore(outputData: ArrayBuffer[]): number {
-  if (outputData.length < EXPECTED_OUTPUT_COUNT) return 0;
-  const scores = new Float32Array(outputData[2]);
+  const resolved = resolveOutputs(outputData);
+  if (resolved === null) return 0;
   let top = 0;
-  for (let i = 0; i < scores.length; i++) {
-    if (scores[i] > top) top = scores[i];
+  for (const score of resolved.scores) {
+    if (score > top) top = score;
   }
   return top;
 }
@@ -45,13 +125,11 @@ export function parseDetections(
   frameWidth: number,
   frameHeight: number,
 ): DetectedObject[] {
-  if (outputData.length < EXPECTED_OUTPUT_COUNT) return [];
+  const resolved = resolveOutputs(outputData);
+  if (resolved === null) return [];
 
-  const boxes = new Float32Array(outputData[0]);
-  const categories = new Float32Array(outputData[1]);
-  const scores = new Float32Array(outputData[2]);
-  const reported = new Float32Array(outputData[3])[0] ?? 0;
-  const count = Math.min(Math.round(reported), scores.length);
+  const { boxes, categories, scores } = resolved;
+  const count = Math.min(resolved.count, scores.length);
 
   const objects: DetectedObject[] = [];
 

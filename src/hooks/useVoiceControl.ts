@@ -82,7 +82,9 @@ export function useVoiceControl(
       }
       void audioSession.startListening(handleTranscript);
       return () => {
-        audioSession.stopListening();
+        // Truyền handler làm owner: nếu màn hình kế tiếp đã tiếp quản mic
+        // trước khi cleanup này chạy, lệnh dừng phải tự bỏ qua.
+        audioSession.stopListening(handleTranscript);
       };
     }, [enabled, handleTranscript]),
   );

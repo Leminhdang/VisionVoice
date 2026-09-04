@@ -67,18 +67,18 @@ export function traceVoice(event: string, detail?: Record<string, unknown>): voi
     return;
   }
   // eslint-disable-next-line no-console -- INTENTIONAL: adb logcat collection path
-  // console.log(
-  //   'VVASR ' +
-  //     JSON.stringify({
-  //       event,
-  //       wantListening,
-  //       isListening,
-  //       isSuspended,
-  //       isSpeaking,
-  //       guardMsLeft: Math.max(0, guardUntilMs - Date.now()),
-  //       ...detail,
-  //     }),
-  // );
+  console.log(
+    'VVASR ' +
+      JSON.stringify({
+        event,
+        wantListening,
+        isListening,
+        isSuspended,
+        isSpeaking,
+        guardMsLeft: Math.max(0, guardUntilMs - Date.now()),
+        ...detail,
+      }),
+  );
 }
 
 /**
@@ -110,8 +110,23 @@ export async function startListening(onTranscript: TranscriptCallback): Promise<
   startRecognition();
 }
 
-/** Stops recognition and cancels any pending restart. */
-export function stopListening(): void {
+/**
+ * Stops recognition and cancels any pending restart.
+ *
+ * `owner` là callback đã truyền cho startListening(). audioSession là
+ * singleton dùng chung, còn mỗi màn hình lại tự gọi stop khi blur — mà React
+ * Navigation KHÔNG đảm bảo cleanup của màn cũ chạy trước effect focus của màn
+ * mới. Nếu màn mới đã kịp startListening() thì lệnh stop của màn cũ sẽ tắt mic
+ * của màn mới và người dùng mất hẳn điều khiển giọng nói. Truyền owner vào để
+ * lệnh stop đến muộn tự nhận ra mình không còn giữ mic nữa.
+ *
+ * Bỏ trống owner = dừng vô điều kiện (dùng khi thực sự muốn tắt hẳn).
+ */
+export function stopListening(owner?: TranscriptCallback): void {
+  if (owner !== undefined && onTranscriptRef !== owner) {
+    traceVoice('stop_ignored_not_owner');
+    return;
+  }
   clearRestartTimer();
   wantListening = false;
   ExpoSpeechRecognitionModule.stop();

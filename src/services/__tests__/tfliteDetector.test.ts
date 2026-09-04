@@ -1,5 +1,5 @@
 import { OBSTACLE_SCORE_MIN } from '../../constants/config';
-import { parseDetections } from '../tfliteDetector';
+import { parseDetections, readTopScore } from '../tfliteDetector';
 
 const FRAME_WIDTH = 400;
 const FRAME_HEIGHT = 200;
@@ -176,5 +176,59 @@ describe('parseDetections', () => {
 
     // Assert
     expect(result).toEqual([]);
+  });
+});
+
+describe('nhận dạng vai trò tensor đầu ra', () => {
+  /** Đảo thứ tự thành count, score, box, category — một hoán vị khác hẳn. */
+  function shuffleOutputs(outputs: ArrayBuffer[]): ArrayBuffer[] {
+    const [boxes, categories, scores, count] = outputs;
+    return [count, scores, boxes, categories];
+  }
+
+  test('đọc đúng dù thứ tự tensor bị hoán vị', () => {
+    // Arrange — cùng một khung, chỉ khác thứ tự tensor.
+    const detection = {
+      box: [0, 0, 0.5, 0.5] as [number, number, number, number],
+      category: PERSON_CLASS_INDEX,
+      score: HIGH_SCORE,
+    };
+    const inOrder = parseDetections(makeOutputs([detection]), FRAME_WIDTH, FRAME_HEIGHT);
+
+    // Act
+    const shuffled = parseDetections(
+      shuffleOutputs(makeOutputs([detection])),
+      FRAME_WIDTH,
+      FRAME_HEIGHT,
+    );
+
+    // Assert — đọc nhầm thứ tự không ném lỗi, nó chỉ lặng lẽ ra 0 vật cản.
+    expect(shuffled).toEqual(inOrder);
+    expect(shuffled).toHaveLength(1);
+  });
+
+  test('readTopScore lấy đúng tensor điểm dù thứ tự bị hoán vị', () => {
+    // Arrange
+    const outputs = makeOutputs([
+      { box: [0, 0, 0.5, 0.5], category: PERSON_CLASS_INDEX, score: HIGH_SCORE },
+    ]);
+
+    // Act + Assert
+    expect(readTopScore(outputs)).toBeCloseTo(HIGH_SCORE);
+    expect(readTopScore(shuffleOutputs(outputs))).toBeCloseTo(HIGH_SCORE);
+  });
+
+  test('phân biệt được lớp và điểm khi chỉ số lớp lớn hơn 1', () => {
+    // Arrange — ghost class index 11 > 1, còn điểm luôn nằm trong [0,1].
+    const outputs = makeOutputs([
+      { box: [0.1, 0.1, 0.9, 0.9], category: GHOST_CLASS_INDEX, score: HIGH_SCORE },
+    ]);
+
+    // Act
+    const result = parseDetections(shuffleOutputs(outputs), FRAME_WIDTH, FRAME_HEIGHT);
+
+    // Assert — nhãn ghost cho labels rỗng, nhưng vật cản vẫn được tính.
+    expect(result).toHaveLength(1);
+    expect(result[0].labels).toEqual([]);
   });
 });

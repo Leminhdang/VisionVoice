@@ -247,3 +247,35 @@ describe('ASR lỗi liên tiếp', () => {
     expect(mockRecognitionModule.start).not.toHaveBeenCalled();
   });
 });
+
+describe('quyền sở hữu mic khi chuyển màn hình', () => {
+  test('lệnh dừng đến muộn của màn cũ không tắt mic của màn mới', async () => {
+    // Arrange — màn A đang nghe, rồi màn B tiếp quản.
+    const onScreenA = jest.fn();
+    const onScreenB = jest.fn();
+    await audioSession.startListening(onScreenA);
+    await audioSession.startListening(onScreenB);
+
+    // Act — cleanup của màn A chạy SAU effect focus của màn B (React
+    // Navigation không đảm bảo thứ tự).
+    audioSession.stopListening(onScreenA);
+    emitFinalResult('chụp ảnh');
+
+    // Assert — mic phải còn sống và thuộc về màn B.
+    expect(onScreenB).toHaveBeenCalledWith('chụp ảnh', true);
+    expect(onScreenA).not.toHaveBeenCalled();
+  });
+
+  test('chủ sở hữu hiện tại vẫn dừng được mic của chính nó', async () => {
+    // Arrange
+    const onScreen = jest.fn();
+    await audioSession.startListening(onScreen);
+
+    // Act
+    audioSession.stopListening(onScreen);
+    emitFinalResult('chụp ảnh');
+
+    // Assert
+    expect(onScreen).not.toHaveBeenCalled();
+  });
+});

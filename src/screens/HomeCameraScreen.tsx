@@ -187,6 +187,13 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
     photoOutputRef.current = null;
   }, []);
 
+  // Unmount không kích hoạt onPhotoOutputLost, nên buông tham chiếu ở đây.
+  useEffect(() => {
+    if (!isFocused) {
+      photoOutputRef.current = null;
+    }
+  }, [isFocused]);
+
   const handleGallery = useCallback(() => void pickImage(), [pickImage]);
   const handleShutterPress = useCallback(() => captureFlow('button'), [captureFlow]);
   const handleVoiceCapture = useCallback(() => captureFlow('voice'), [captureFlow]);
@@ -255,13 +262,18 @@ export default function HomeCameraScreen({ navigation }: HomeCameraScreenProps) 
     <View style={styles.container}>
       {/* isActive: màn này không unmount khi mở chế độ khác, nên phải tự
           nhường camera — hai session cùng active thì Android ngắt session cũ. */}
-      <CameraViewport
-        ref={cameraRef}
-        isActive={isFocused}
-        targetResolution={CAPTURE_PHOTO_RESOLUTION}
-        onPhotoOutputReady={handlePhotoOutputReady}
-        onPhotoOutputLost={handlePhotoOutputLost}
-      />
+      {/* Tháo hẳn camera khi rời màn thay vì chỉ isActive=false: màn này nằm
+          trong stack nên không unmount, và việc đánh thức lại một session đã
+          tắt là đường hay hỏng nhất (quay về từ chế độ dò vật cản thì preview
+          đen). Mount mới luôn cho một session sạch và một photoOutput mới. */}
+      {isFocused && (
+        <CameraViewport
+          ref={cameraRef}
+          targetResolution={CAPTURE_PHOTO_RESOLUTION}
+          onPhotoOutputReady={handlePhotoOutputReady}
+          onPhotoOutputLost={handlePhotoOutputLost}
+        />
+      )}
       <View style={styles.scrimTop} pointerEvents="none" />
       <View style={styles.scrimBottom} pointerEvents="none" />
       <View style={[styles.titleRow, { top: insets.top + spacing.md }]} ref={titleRef}
