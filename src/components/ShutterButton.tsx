@@ -1,7 +1,8 @@
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { CAPTURE } from '../constants/strings';
 import { colors } from '../theme/colors';
+import { elevation } from '../theme/elevation';
 import { SHUTTER_ZONE } from '../theme/spacing';
 
 export interface ShutterButtonProps {
@@ -11,12 +12,11 @@ export interface ShutterButtonProps {
 
 const CIRCLE_SIZE = 104;
 const RING_WIDTH = 6;
-const GLOW_OPACITY = 0.6;
-const GLOW_RADIUS = 16;
+const PRESSED_SCALE = 0.94;
 
 export function ShutterButton({ onPress, disabled = false }: ShutterButtonProps) {
   return (
-    <TouchableOpacity
+    <Pressable
       style={styles.zone}
       onPress={onPress}
       disabled={disabled}
@@ -24,8 +24,12 @@ export function ShutterButton({ onPress, disabled = false }: ShutterButtonProps)
       accessibilityLabel={CAPTURE.SHUTTER_LABEL}
       accessibilityState={{ disabled }}
     >
-      <View style={styles.circle} />
-    </TouchableOpacity>
+      {({ pressed }) => (
+        <View
+          style={[styles.circle, pressed && !disabled && styles.circlePressed]}
+        />
+      )}
+    </Pressable>
   );
 }
 
@@ -43,10 +47,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textPrimary,
     borderWidth: RING_WIDTH,
     borderColor: colors.accent,
-    shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: GLOW_OPACITY,
-    shadowRadius: GLOW_RADIUS,
-    elevation: 12,
+    ...elevation.hero,
+  },
+  // Co nhẹ + vòng sáng lên: chuyển động đủ nhỏ để không gây khó chịu, nhưng
+  // thấy được cả khi thị lực còn rất ít.
+  circlePressed: {
+    borderColor: colors.accentSoft,
+    transform: [{ scale: PRESSED_SCALE }],
   },
 });

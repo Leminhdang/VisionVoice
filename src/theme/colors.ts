@@ -5,6 +5,9 @@ export const colors = {
   bgAlt: '#090911',
   surface: '#111122',
   surfaceAlt: '#131322',
+  // Nền nút nền-tối khi đang nhấn. Với người nhìn kém, mờ đi là phản hồi yếu
+  // nhất có thể — nút phải SÁNG LÊN rõ rệt chứ không phải nhạt đi.
+  surfacePressed: '#232347',
   line: 'rgba(255,255,255,0.10)',
   textPrimary: '#FFFFFF',
   textBody: '#E2E8F0',

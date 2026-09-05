@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../theme/colors';
@@ -16,6 +16,7 @@ export interface CornerControlProps {
 const ICON_SIZE = 32;
 const HIT_SLOP = 8;
 const BG_OPACITY = 0.6;
+const BG_OPACITY_PRESSED = 0.95;
 
 export function CornerControl({ position, iconName, label, hint, onPress }: CornerControlProps) {
   // Màn hình không có header (headerShown: false), nên nút góc phải tự tránh
@@ -27,23 +28,39 @@ export function CornerControl({ position, iconName, label, hint, onPress }: Corn
       : { top: SCREEN_PADDING + insets.top };
 
   return (
-    <TouchableOpacity
-      style={[styles.base, positionStyles[position], insetStyle]}
+    <Pressable
+      style={({ pressed }) => [
+        styles.base,
+        positionStyles[position],
+        insetStyle,
+        pressed && styles.basePressed,
+      ]}
       onPress={onPress}
       hitSlop={{ top: HIT_SLOP, bottom: HIT_SLOP, left: HIT_SLOP, right: HIT_SLOP }}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={hint}
     >
-      <View style={styles.background} />
-      <Ionicons name={iconName} size={ICON_SIZE} color={colors.accentSoft} />
-    </TouchableOpacity>
+      {({ pressed }) => (
+        <>
+          <View style={[styles.background, pressed && styles.backgroundPressed]} />
+          <Ionicons
+            name={iconName}
+            size={ICON_SIZE}
+            color={pressed ? colors.textPrimary : colors.accentSoft}
+          />
+        </>
+      )}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   base: {
     position: 'absolute',
+    // Viền luôn hiện diện để lúc nhấn chỉ đổi màu, không đổi kích thước.
+    borderWidth: 2,
+    borderColor: 'transparent',
     width: CORNER_CONTROL,
     height: CORNER_CONTROL,
     borderRadius: radius,
@@ -55,6 +72,14 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: colors.surface,
     opacity: BG_OPACITY,
+  },
+  // Ba nút góc trước đây gần như không có phản hồi nào khi chạm.
+  basePressed: {
+    borderColor: colors.accentSoft,
+  },
+  backgroundPressed: {
+    backgroundColor: colors.surfacePressed,
+    opacity: BG_OPACITY_PRESSED,
   },
   // Trục dọc do insetStyle quyết định — ở đây chỉ đặt trục ngang.
   topLeft: {

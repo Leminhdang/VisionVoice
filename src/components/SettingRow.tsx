@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../theme/colors';
 import { radius, spacing, TARGET_SECONDARY } from '../theme/spacing';
@@ -38,23 +38,23 @@ export function StepperRow({
     <View style={styles.stepperRow}>
       <Text style={styles.stepperLabel}>{label}</Text>
       <View style={styles.stepperControls}>
-        <TouchableOpacity
-          style={styles.stepButton}
+        <Pressable
+          style={({ pressed }) => [styles.stepButton, pressed && styles.controlPressed]}
           onPress={onDecrease}
           accessibilityRole="button"
           accessibilityLabel={decreaseLabel}
         >
           <Ionicons name="remove" size={STEP_ICON_SIZE} color={colors.textPrimary} />
-        </TouchableOpacity>
+        </Pressable>
         <Text style={styles.valueText}>{valueText}</Text>
-        <TouchableOpacity
-          style={styles.stepButton}
+        <Pressable
+          style={({ pressed }) => [styles.stepButton, pressed && styles.controlPressed]}
           onPress={onIncrease}
           accessibilityRole="button"
           accessibilityLabel={increaseLabel}
         >
           <Ionicons name="add" size={STEP_ICON_SIZE} color={colors.textPrimary} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -73,15 +73,19 @@ function SegmentButton({ optionKey, label, isSelected, onSelect }: SegmentButton
   }, [onSelect, optionKey]);
 
   return (
-    <TouchableOpacity
-      style={[styles.segmentButton, isSelected ? styles.segmentSelected : styles.segmentUnselected]}
+    <Pressable
+      style={({ pressed }) => [
+        styles.segmentButton,
+        isSelected ? styles.segmentSelected : styles.segmentUnselected,
+        pressed && styles.segmentPressed,
+      ]}
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: isSelected }}
     >
       <Text style={isSelected ? styles.segmentTextSelected : styles.segmentText}>{label}</Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -149,6 +153,16 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.textPrimary,
   },
+  // Cùng ngôn ngữ nhấn với BigActionButton: nền sáng lên + viền nổi.
+  controlPressed: {
+    backgroundColor: colors.surfacePressed,
+    borderColor: colors.accentSoft,
+  },
+  // Nút phân đoạn dùng NỀN để thể hiện đang chọn, nên khi nhấn chỉ đổi viền —
+  // đổi nền sẽ làm mục đang chọn trông như vừa bị bỏ chọn.
+  segmentPressed: {
+    borderColor: colors.accentSoft,
+  },
   segmentRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -158,6 +172,10 @@ const styles = StyleSheet.create({
     minHeight: TARGET_SECONDARY,
     paddingVertical: spacing.sm,
     borderRadius: radius,
+    // Viền cố định: mục được chọn và không được chọn phải cùng kích thước,
+    // và lúc nhấn chỉ đổi màu viền.
+    borderWidth: 2,
+    borderColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -166,7 +184,6 @@ const styles = StyleSheet.create({
   },
   segmentUnselected: {
     backgroundColor: colors.surface,
-    borderWidth: 1,
     borderColor: colors.line,
   },
   segmentText: {

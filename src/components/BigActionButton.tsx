@@ -1,8 +1,9 @@
 import { useCallback } from 'react';
-import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { hapticNavigate } from '../services/feedback';
 import { colors } from '../theme/colors';
+import { elevation } from '../theme/elevation';
 import { radius, spacing, TARGET_PRIMARY, TARGET_SECONDARY } from '../theme/spacing';
 import { typography } from '../theme/typography';
 
@@ -33,11 +34,14 @@ export function BigActionButton({
   }, [onPress]);
 
   return (
-    <TouchableOpacity
-      style={[
+    <Pressable
+      style={({ pressed }) => [
         styles.base,
         compact ? styles.heightCompact : styles.heightFull,
         containerByVariant[variant],
+        variant === 'primary' && elevation.primary,
+        pressed && !disabled && pressedByVariant[variant],
+        pressed && !disabled && styles.pressedOutline,
         disabled && styles.disabled,
       ]}
       onPress={handlePress}
@@ -48,7 +52,7 @@ export function BigActionButton({
       accessibilityState={{ disabled }}
     >
       <Text style={styles.label}>{label}</Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -56,6 +60,10 @@ const styles = StyleSheet.create({
   base: {
     width: '100%',
     borderRadius: radius,
+    // Viền luôn hiện diện (mặc định trong suốt) để lúc nhấn chỉ đổi MÀU viền —
+    // đổi cả bề dày sẽ làm nhãn nhảy vài pixel, rất khó chịu khi nhìn kém.
+    borderWidth: 2,
+    borderColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
@@ -75,11 +83,24 @@ const styles = StyleSheet.create({
   },
   secondary: {
     backgroundColor: colors.surface,
-    borderWidth: 1,
     borderColor: colors.line,
   },
   danger: {
     backgroundColor: colors.dangerFill,
+  },
+  // Nhấn = nền sáng lên + viền nổi, KHÔNG phải mờ đi. Viền vẽ đè lên viền sẵn
+  // có của variant secondary nên bề dày nút không đổi khi nhấn.
+  primaryPressed: {
+    backgroundColor: colors.accent,
+  },
+  secondaryPressed: {
+    backgroundColor: colors.surfacePressed,
+  },
+  dangerPressed: {
+    backgroundColor: colors.danger,
+  },
+  pressedOutline: {
+    borderColor: colors.accentSoft,
   },
   disabled: {
     opacity: DISABLED_OPACITY,
@@ -95,4 +116,10 @@ const containerByVariant = {
   primary: styles.primary,
   secondary: styles.secondary,
   danger: styles.danger,
+} as const;
+
+const pressedByVariant = {
+  primary: styles.primaryPressed,
+  secondary: styles.secondaryPressed,
+  danger: styles.dangerPressed,
 } as const;
