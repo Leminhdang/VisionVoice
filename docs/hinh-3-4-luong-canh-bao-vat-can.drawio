@@ -1,0 +1,68 @@
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram name="Hình 3.4 — Luồng cảnh báo vật cản" id="hinh-3-4">
+    <mxGraphModel dx="1000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="950" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="p0" value="Vào chế độ dò vật cản" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="215" y="30" width="270" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="&lt;b&gt;1.&lt;/b&gt; capturePhoto() — độ phân giải 640 × 480" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="140" y="100" width="420" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="&lt;b&gt;2.&lt;/b&gt; Chuyển sang đối tượng Image của hệ thống&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;tự áp EXIF orientation nên khung hình luôn đúng chiều&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="140" y="160" width="420" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="&lt;b&gt;3.&lt;/b&gt; Thu nhỏ 320 × 320 (native) → đọc điểm ảnh&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;tạo chuỗi byte RGB theo pixelFormat thật, không đoán&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="140" y="230" width="420" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="&lt;b&gt;4.&lt;/b&gt; model.runSync() — EfficientDet-Lite0&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;4 tensor: vị trí · lớp · điểm tin cậy · số lượng (NMS dựng sẵn)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c9dfc0;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="140" y="300" width="420" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="&lt;b&gt;5.&lt;/b&gt; Lọc: điểm tin cậy ≥ 0,35 &lt;b&gt;và&lt;/b&gt; tâm bbox nằm trong dải dọc trung tâm&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;bề rộng dải thay đổi theo độ nhạy thấp / vừa / cao&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="140" y="370" width="420" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" value="&lt;b&gt;6.&lt;/b&gt; areaRatio → mức độ&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;≥ 0,35 nguy hiểm · 0,18–0,35 cảnh báo · &amp;lt; 0,18 an toàn&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="140" y="440" width="420" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="pd1" value="Đủ điều kiện phát?&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;đổi mức, hoặc hết cooldown&lt;br&gt;2 s nguy hiểm · 3 s cảnh báo&lt;/font&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="215" y="515" width="270" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p7" value="&lt;b&gt;7.&lt;/b&gt; Phát cảnh báo ba kênh&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;TTS + rung + đổi màu toàn màn hình · leo thang lên nguy hiểm báo ngay&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="140" y="665" width="420" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p8" value="&lt;b&gt;8.&lt;/b&gt; Giải phóng ảnh tạm + chờ 900 ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1e1e1;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="140" y="740" width="420" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pd2" value="Còn ở chế độ&lt;br&gt;dò vật cản?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="810" width="240" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="pend" value="Dừng vòng quét · đọc &quot;Đã tắt chế độ dò vật cản&quot;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="945" width="340" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="pnote" value="Mỗi vòng ≈ 1,5 giây&lt;br&gt;(~0,7 khung hình/giây)&lt;br&gt;&lt;br&gt;Đủ cho tốc độ đi bộ chậm,&lt;br&gt;&lt;b&gt;chưa phải xử lý video&lt;br&gt;thời gian thực&lt;/b&gt;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="640" y="180" width="240" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pe0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p0" target="p1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p1" target="p2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p2" target="p3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p3" target="p4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p4" target="p5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p5" target="p6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p6" target="pd1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe7" value="Có" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=11;" edge="1" parent="1" source="pd1" target="p7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe8" value="Không — giữ im lặng" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5;fontSize=11;dashed=1;" edge="1" parent="1" source="pd1" target="p8">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="600" y="575" /><mxPoint x="600" y="760" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="pe9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p7" target="p8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p8" target="pd2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="pe11" value="Có — lặp lại vòng quét" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;entryX=0;entryY=0.5;fontSize=11;strokeColor=#82b366;" edge="1" parent="1" source="pd2" target="p1">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="60" y="858" /><mxPoint x="60" y="120" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="pe12" value="Không — lệnh &quot;dừng&quot; hoặc rời màn hình" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=11;" edge="1" parent="1" source="pd2" target="pend"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

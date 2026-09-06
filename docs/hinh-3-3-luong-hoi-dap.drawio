@@ -1,0 +1,86 @@
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram name="Hình 3.3 — Luồng hỏi đáp về ảnh" id="hinh-3-3">
+    <mxGraphModel dx="1100" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1050" pageHeight="1150" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="q0" value="Mở màn hỏi đáp từ ảnh vừa mô tả" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="265" y="30" width="270" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q1" value="Đọc lời giới thiệu màn hình cho XONG&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;rồi mới mount tầng Q&amp;amp;A — tránh câu hỏi mở đầu cắt ngang&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="100" width="440" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="q2" value="Tạo chat session từ ảnh + đọc &quot;Bạn muốn hỏi gì về bức ảnh?&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="170" width="440" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q3" value="&lt;b&gt;Bắt đầu nghe&lt;/b&gt; — âm hiệu bắt đầu nghe · trạng thái listening" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="235" width="440" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q4" value="Nhận transcript từ ASR vi-VN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="300" width="440" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="qd1" value="Là lệnh thoát?&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;&quot;quay lại&quot; / &quot;dừng&quot;&lt;/font&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="360" width="240" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="qd2" value="Đã chốt câu hỏi?&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;có isFinal, hoặc đã im lặng 1200 ms&lt;/font&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="480" width="240" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="qd3" value="Lượt đầu&lt;br&gt;của phiên?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="610" width="240" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="q5a" value="Gửi &lt;b&gt;ảnh + câu hỏi&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="50" y="735" width="290" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q5b" value="Chỉ gửi &lt;b&gt;câu hỏi dạng văn bản&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="460" y="735" width="290" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q6" value="Tạm dừng ASR (setSuspended) — trạng thái thinking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="820" width="440" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q7" value="Nhận câu trả lời từ Gemini&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;giới hạn 30 s · lỗi thì đọc câu lỗi tiếng Việt&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="885" width="440" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="q8" value="Đọc câu trả lời qua speakExclusive — trạng thái answering" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bac8d3;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="955" width="440" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q9" value="Mở lại micro sau 800 ms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="1020" width="440" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="qexit" value="Kết thúc phiên&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;hủy chat session · đọc &quot;Đã quay lại màn hình máy ảnh&quot;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="370" width="300" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="qend" value="Về màn hình máy ảnh" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="715" y="470" width="270" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="qptt" value="&lt;b&gt;Bấm giữ phím âm lượng&lt;/b&gt; bất cứ lúc nào&lt;br&gt;→ cắt lời đang đọc và nghe ngay (barge-in)" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="700" y="560" width="300" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="qe0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="q0" target="q1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="q1" target="q2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="q2" target="q3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="q3" target="q4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="q4" target="qd1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe5" value="Có — nhận ngay cả trên kết quả tạm thời" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontSize=11;strokeColor=#b85450;" edge="1" parent="1" source="qd1" target="qexit"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe6" value="Không" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=11;" edge="1" parent="1" source="qd1" target="qd2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe7" value="Chưa — giữ bản tạm, tiếp tục nghe" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;entryX=0;entryY=0.5;fontSize=11;dashed=1;" edge="1" parent="1" source="qd2" target="q4">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="30" y="533" /><mxPoint x="30" y="320" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="qe8" value="Rồi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=11;" edge="1" parent="1" source="qd2" target="qd3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe9" value="Có" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;entryX=0.5;entryY=0;fontSize=11;" edge="1" parent="1" source="qd3" target="q5a"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe10" value="Không" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;fontSize=11;" edge="1" parent="1" source="qd3" target="q5b"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="q5a" target="q6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="q5b" target="q6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="q6" target="q7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="q7" target="q8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="q8" target="q9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="qe16" value="hỏi tiếp lượt sau" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5;fontSize=11;strokeColor=#82b366;" edge="1" parent="1" source="q9" target="q3">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="670" y="1040" /><mxPoint x="670" y="258" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="qe17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#b85450;" edge="1" parent="1" source="qexit" target="qend"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
