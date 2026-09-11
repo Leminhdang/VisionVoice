@@ -1,5 +1,7 @@
+import { Asset } from 'expo-asset';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTensorflowModel } from 'react-native-fast-tflite';
+import { loadTensorflowModel } from 'react-native-fast-tflite';
+import type { TensorflowPlugin } from 'react-native-fast-tflite';
 import type { CameraPhotoOutput } from 'react-native-vision-camera';
 
 import {
@@ -26,6 +28,67 @@ interface UseObstacleScannerOptions {
 
 interface UseObstacleScannerResult {
   assessment: Assessment | null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const MODEL_ASSET: number = require('../../assets/models/efficientdet_lite0_detection.tflite');
+
+/**
+ * Nạp model qua expo-asset thay vì truyền thẳng require() cho fast-tflite.
+ *
+ * fast-tflite trên Android đọc model bằng đúng một dòng `URL(path).readBytes()`
+ * (HybridAssetLoader.kt). Nếu truyền require(), React Native tự chọn đường dẫn:
+ * - bản dev trả URL http tới Metro → tắt Wi-Fi là không nạp được model;
+ * - bản release trả TÊN RESOURCE TRẦN không có giao thức
+ *   ("models_efficientdet_lite0_detection") → `URL()` ném "no protocol",
+ *   hỏng ngay cả khi có mạng.
+ * Tức là chế độ dò vật cản chưa từng chạy được offline, trái với thiết kế.
+ *
+ * `Asset.downloadAsync()` chép model ra một đường dẫn file:// mà `URL()` đọc
+ * được ở mọi môi trường và lưu cache: bản release luôn offline; bản dev offline
+ * được sau khi đã vào chế độ này một lần lúc còn mạng.
+ *
+ * Trả về đúng kiểu TensorflowPlugin như useTensorflowModel để phần còn lại của
+ * scanner không phải đổi gì.
+ */
+function useLocalTfliteModel(): TensorflowPlugin {
+  const [plugin, setPlugin] = useState<TensorflowPlugin>({
+    model: undefined,
+    state: 'loading',
+  });
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const load = async (): Promise<void> => {
+      const asset = Asset.fromModule(MODEL_ASSET);
+      await asset.downloadAsync();
+      if (asset.localUri == null) {
+        throw new Error('Không có đường dẫn cục bộ cho model vật cản.');
+      }
+      const model = await loadTensorflowModel({ url: asset.localUri }, TFLITE_DELEGATES);
+      if (!isCancelled) {
+        setPlugin({ model, state: 'loaded' });
+      }
+    };
+
+    load().catch((error: unknown) => {
+      if (isCancelled) {
+        return;
+      }
+      setPlugin({
+        model: undefined,
+        state: 'error',
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  return plugin;
 }
 
 /**
@@ -85,12 +148,7 @@ export function useObstacleScanner(
     photoOutputRef.current = output;
   }, []);
 
-  // Load TFLite model via hook
-  const tfModel = useTensorflowModel(
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('../../assets/models/efficientdet_lite0_detection.tflite'),
-    TFLITE_DELEGATES,
-  );
+  const tfModel = useLocalTfliteModel();
   const modelRef = useRef(tfModel.model);
   modelRef.current = tfModel.model;
 

@@ -1182,6 +1182,19 @@
     parse-png "^2.1.0"
     semver "^7.6.0"
 
+"@expo/image-utils@^0.10.5":
+  version "0.10.5"
+  resolved "https://registry.yarnpkg.com/@expo/image-utils/-/image-utils-0.10.5.tgz#f4096b997c3658407493c38a0391ff860d00d72a"
+  integrity sha512-s40rjuVtsawTe5Gkx0SorxoUChz10jLUU9tlysqUyND5l1DiWx5ZiJ86Bt0/TnSWkRqCMj4JECe6zyuNoRmlGw==
+  dependencies:
+    "@expo/require-utils" "^56.1.7"
+    "@expo/spawn-async" "^1.8.0"
+    chalk "^4.0.0"
+    getenv "^2.0.0"
+    jimp-compact "0.16.1"
+    parse-png "^2.1.0"
+    semver "^7.6.0"
+
 "@expo/inline-modules@^0.0.15":
   version "0.0.15"
   resolved "https://registry.yarnpkg.com/@expo/inline-modules/-/inline-modules-0.0.15.tgz#ee1a0e2de5822c6f0bd2aa16dad8c577e3c12ea9"
@@ -1331,6 +1344,15 @@
   version "56.1.6"
   resolved "https://registry.yarnpkg.com/@expo/require-utils/-/require-utils-56.1.6.tgz#3bf38b802451e8737b6a40f77deaa40c6a5ebfbc"
   integrity sha512-e68r6X+c7yPxJP0gac/CaJc/RCHeLB2Bf4MyCuqfNM4YXfl1ONmQbQlRL0RbwBfEHn6A6UZKj+5UX9j0Im646g==
+  dependencies:
+    "@babel/code-frame" "^7.20.0"
+    "@babel/core" "^7.25.2"
+    "@babel/plugin-transform-modules-commonjs" "^7.24.8"
+
+"@expo/require-utils@^56.1.7":
+  version "56.1.7"
+  resolved "https://registry.yarnpkg.com/@expo/require-utils/-/require-utils-56.1.7.tgz#ad067811fcf26e632e710b5edac75531c6cfb7de"
+  integrity sha512-7Huw3V4VVThWZglueHpHX4gxdYvjhKOO5DzC/1NBuaDY4IPf/iPhqE+diFA6J/ZF0nC+tcC4YmUidXhnr7cmzQ==
   dependencies:
     "@babel/code-frame" "^7.20.0"
     "@babel/core" "^7.25.2"
@@ -3497,6 +3519,14 @@ expo-asset@~56.0.22:
     "@expo/image-utils" "^0.10.4"
     expo-constants "~56.0.23"
 
+expo-asset@~56.0.24:
+  version "56.0.24"
+  resolved "https://registry.yarnpkg.com/expo-asset/-/expo-asset-56.0.24.tgz#bd295465ee3e3721259acce03043d108d094f81a"
+  integrity sha512-Zy41rl0gtfyZmzV1bzxZype1iEAKz/FiTKOw3yTvA5I2biGnDSh0GbTAYQzkrqYbhnyJAqIe+sXe2eo4DfJ8KQ==
+  dependencies:
+    "@expo/image-utils" "^0.10.5"
+    expo-constants "~56.0.25"
+
 expo-audio@~56.0.13:
   version "56.0.13"
   resolved "https://registry.yarnpkg.com/expo-audio/-/expo-audio-56.0.13.tgz#c8979f35bc6c53575d46e55b3aa714836cda69f0"
@@ -3515,6 +3545,13 @@ expo-constants@~56.0.23:
   version "56.0.23"
   resolved "https://registry.yarnpkg.com/expo-constants/-/expo-constants-56.0.23.tgz#0e72392d40f818b546d319836f0dacd6380ef88a"
   integrity sha512-rlHmhwvKqljCNdqs4xdxcHzk22rbnVv05lyQqQtYXFkzreFErsQYVDvDCiw3LG6vjQRRTPTEdSgtyNgs8y9cBA==
+  dependencies:
+    "@expo/env" "~2.3.1"
+
+expo-constants@~56.0.25:
+  version "56.0.25"
+  resolved "https://registry.yarnpkg.com/expo-constants/-/expo-constants-56.0.25.tgz#0f0f49076b0d5cd16f751468b2bf821a37a6aabb"
+  integrity sha512-KlYOe6F/7lxyedsSrZJHhOjff7goDeJ+tp+e1rK0/ohmt+AxziB3vfyvwcqamC5lRhxJYAgz2CCLAU3Rbb7xUg==
   dependencies:
     "@expo/env" "~2.3.1"
 
