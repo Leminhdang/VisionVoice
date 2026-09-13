@@ -5,6 +5,8 @@ import {
   ANNOUNCE_COOLDOWN_MS,
   CENTER_BAND_WIDTH_RATIO,
   DANGER_AREA_RATIO,
+  OBSTACLE_CONFIRM_FRAMES,
+  OBSTACLE_MIN_BOTTOM_RATIO,
   OBSTACLE_SCORE_MIN,
   WARNING_AREA_RATIO,
 } from '../constants/config';
@@ -91,6 +93,18 @@ function isInCenterBand(
   return centerX >= bandStart && centerX <= bandEnd;
 }
 
+/**
+ * Vật có nằm trên lối đi không, xét theo trục dọc.
+ *
+ * Bổ sung cho isInCenterBand (trục ngang): với camera đeo ngực hướng thẳng,
+ * vật đặt trên mặt đất càng gần thì cạnh đáy bbox càng tụt thấp trong khung.
+ * Đáy nằm ở nửa trên khung nghĩa là ở xa, hoặc ở trên cao ngoài lối đi.
+ */
+function isOnWalkingPath(object: DetectedObject, frameHeight: number): boolean {
+  const bottom = object.frame.origin.y + object.frame.size.y;
+  return bottom / frameHeight >= OBSTACLE_MIN_BOTTOM_RATIO;
+}
+
 function toSeverity(areaRatio: number): Severity {
   if (areaRatio >= DANGER_AREA_RATIO) {
     return 'danger';
@@ -102,9 +116,11 @@ function toSeverity(areaRatio: number): Severity {
 }
 
 /**
- * Assess a frame of detections. Objects must (1) score >= OBSTACLE_SCORE_MIN
- * and (2) have their bbox center-x inside the central band whose width is
- * CENTER_BAND_WIDTH_RATIO[sensitivity] * frame.width. Severity comes from the
+ * Assess a frame of detections. Objects must (1) score >= OBSTACLE_SCORE_MIN,
+ * (2) have their bbox center-x inside the central band whose width is
+ * CENTER_BAND_WIDTH_RATIO[sensitivity] * frame.width, and (3) have their bbox
+ * BOTTOM edge at or below OBSTACLE_MIN_BOTTOM_RATIO of the frame height —
+ * see isOnWalkingPath(). Severity comes from the
  * bbox-to-frame area ratio; the highest severity wins (ties broken by larger
  * area). `safe` assessments always carry a null label — the safe phrase never
  * names an object. Labels are mapped through OBSTACLE.LABEL_VI; unknown → null.
@@ -126,6 +142,9 @@ export function assessDetections(
       continue;
     }
     if (!isInCenterBand(object, frame.width, sensitivity)) {
+      continue;
+    }
+    if (!isOnWalkingPath(object, frame.height)) {
       continue;
     }
 
@@ -160,6 +179,12 @@ export function assessDetections(
  * - An identical (severity, label) repeat within its cooldown is suppressed;
  *   after the cooldown it re-announces (a persisting obstacle is re-warned).
  *
+ * - XÁC NHẬN THEO KHUNG: phải có OBSTACLE_CONFIRM_FRAMES khung liên tiếp cùng
+ *   thấy vật cản (hoặc cùng thấy đường trống) thì mới được nói. Một khung nhiễu
+ *   lẻ không còn đủ để hét "Dừng lại!". Chuỗi đếm theo CÓ/KHÔNG có vật cản chứ
+ *   không theo từng mức, nên warning/danger xen kẽ vẫn tích luỹ được — đếm theo
+ *   mức sẽ kẹt im lặng vĩnh viễn khi severity dao động.
+ *
  * State only updates when an announcement is allowed, so a suppressed
  * transition is retried on later frames until its cooldown expires.
  *
@@ -171,17 +196,30 @@ export function createAnnouncementPolicy(): AnnouncementPolicy {
   let lastSeverity: Severity | null = null;
   let lastDangerAt = Number.NEGATIVE_INFINITY;
   let lastWarningAt = Number.NEGATIVE_INFINITY;
+  let hazardStreak = 0;
+  let safeStreak = 0;
 
   return {
     shouldAnnounce(assessment: Assessment, now: number): boolean {
       const { severity } = assessment;
 
       if (severity === 'safe') {
+        safeStreak++;
+        hazardStreak = 0;
+        if (safeStreak < OBSTACLE_CONFIRM_FRAMES) {
+          return false;
+        }
         if (lastSeverity === 'safe') {
           return false;
         }
         lastSeverity = 'safe';
         return true;
+      }
+
+      hazardStreak++;
+      safeStreak = 0;
+      if (hazardStreak < OBSTACLE_CONFIRM_FRAMES) {
+        return false;
       }
 
       if (severity === 'danger') {

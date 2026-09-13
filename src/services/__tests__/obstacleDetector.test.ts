@@ -1,4 +1,8 @@
 import {
+  OBSTACLE_CONFIRM_FRAMES,
+  OBSTACLE_MIN_BOTTOM_RATIO,
+} from '../../constants/config';
+import {
   assessDetections,
   createAnnouncementPolicy,
 } from '../obstacleDetector';
@@ -25,6 +29,23 @@ function makeAssessment(
   areaRatio = 0,
 ): Assessment {
   return { severity, label, areaRatio };
+}
+
+/**
+ * Nạp đủ khung để vượt ngưỡng xác nhận mà KHÔNG tiêu mất lần thông báo.
+ *
+ * Chính sách chỉ cho nói từ khung thứ OBSTACLE_CONFIRM_FRAMES trở đi, nên mọi
+ * test về cooldown/chuyển trạng thái đều phải mồi (N − 1) khung trước. Các
+ * khung mồi này bị chặn bởi chính bộ đếm xác nhận nên không đổi lastSeverity.
+ */
+function warmStreak(
+  policy: { shouldAnnounce(a: Assessment, now: number): boolean },
+  assessment: Assessment,
+  now = 0,
+): void {
+  for (let i = 0; i < OBSTACLE_CONFIRM_FRAMES - 1; i++) {
+    policy.shouldAnnounce(assessment, now);
+  }
 }
 
 describe('assessDetections', () => {
@@ -147,6 +168,33 @@ describe('assessDetections', () => {
     expect(result.label).toBe('ghế');
   });
 
+  test('bỏ vật có đáy bbox nằm ở nửa trên khung (ở xa hoặc trên cao)', () => {
+    // Arrange: bbox 90×40 = 0.36 thừa sức vào mức danger, tâm nằm giữa khung,
+    // nhưng đáy ở y = 40 tức 0.40 < OBSTACLE_MIN_BOTTOM_RATIO. Toạ độ không âm
+    // vì parseDetections đã kẹp box về trong khung.
+    const objects = [makeObject(5, 0, 90, 40, [{ text: 'car', confidence: 0.9 }])];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'medium');
+
+    // Assert: ô tô bên kia đường không còn bị báo là nguy hiểm.
+    expect(result).toEqual({ severity: 'safe', label: null, areaRatio: 0 });
+  });
+
+  test('giữ vật có đáy bbox đúng ngay mốc OBSTACLE_MIN_BOTTOM_RATIO', () => {
+    // Arrange: đáy đặt đúng mốc — biên phải được tính là nằm trên lối đi.
+    const bottom = OBSTACLE_MIN_BOTTOM_RATIO * FRAME.height;
+    const objects = [
+      makeObject(15, bottom - 50, 70, 50, [{ text: 'wall', confidence: 0.9 }]),
+    ];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'medium');
+
+    // Assert
+    expect(result.severity).toBe('danger');
+  });
+
   test('returns null label for a label text missing from OBSTACLE.LABEL_VI', () => {
     // Arrange: 'unicorn' has no COCO/Vietnamese mapping
     const objects = [makeObject(15, 20, 70, 50, [{ text: 'unicorn', confidence: 0.9 }])];
@@ -164,6 +212,7 @@ describe('createAnnouncementPolicy', () => {
   test('announces on the first transition into warning', () => {
     // Arrange
     const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('warning', 'ghế', 0.2));
 
     // Act
     const result = policy.shouldAnnounce(makeAssessment('warning', 'ghế', 0.2), 0);
@@ -175,6 +224,7 @@ describe('createAnnouncementPolicy', () => {
   test('suppresses an identical warning repeat within the 3000 ms cooldown', () => {
     // Arrange
     const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('warning', 'ghế', 0.2));
     policy.shouldAnnounce(makeAssessment('warning', 'ghế', 0.2), 0);
 
     // Act
@@ -187,6 +237,7 @@ describe('createAnnouncementPolicy', () => {
   test('re-announces a persisting warning after the cooldown elapses', () => {
     // Arrange
     const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('warning', 'ghế', 0.2));
     policy.shouldAnnounce(makeAssessment('warning', 'ghế', 0.2), 0);
 
     // Act
@@ -199,6 +250,7 @@ describe('createAnnouncementPolicy', () => {
   test('suppresses a warning label change within the cooldown, allows it after', () => {
     // Arrange
     const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('warning', 'ghế', 0.2));
     policy.shouldAnnounce(makeAssessment('warning', 'ghế', 0.2), 0);
 
     // Act
@@ -219,6 +271,7 @@ describe('createAnnouncementPolicy', () => {
   test('escalation to danger bypasses the cooldown immediately', () => {
     // Arrange
     const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('warning', 'ghế', 0.2));
     policy.shouldAnnounce(makeAssessment('warning', 'ghế', 0.2), 0);
 
     // Act
@@ -231,6 +284,7 @@ describe('createAnnouncementPolicy', () => {
   test('persisting danger respects the 2000 ms danger cooldown after escalation', () => {
     // Arrange
     const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('danger', 'ghế', 0.4));
     policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
 
     // Act
@@ -245,7 +299,9 @@ describe('createAnnouncementPolicy', () => {
   test('announces safe once on transition, then stays silent', () => {
     // Arrange
     const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('danger', 'ghế', 0.4));
     policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
+    warmStreak(policy, makeAssessment('safe'), 50);
 
     // Act
     const onTransition = policy.shouldAnnounce(makeAssessment('safe'), 100);
@@ -256,11 +312,66 @@ describe('createAnnouncementPolicy', () => {
     expect(repeated).toBe(false);
   });
 
-  test('re-escalation to danger after safe bypasses the danger cooldown', () => {
-    // Arrange: danger announced at t=0, safe at t=100, danger again at t=200
+  test('một khung nhiễu lẻ không đủ để báo nguy hiểm', () => {
+    // Arrange
+    const policy = createAnnouncementPolicy();
+
+    // Act: đúng một khung thấy danger rồi khung sau đã trống trở lại.
+    const single = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
+
+    // Assert
+    expect(single).toBe(false);
+  });
+
+  test('chuỗi bị ngắt bởi một khung trống thì phải đếm lại từ đầu', () => {
+    // Arrange: danger, trống, danger — không khung danger nào liên tiếp đủ N.
     const policy = createAnnouncementPolicy();
     policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
     policy.shouldAnnounce(makeAssessment('safe'), 100);
+
+    // Act
+    const result = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 200);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  test('warning và danger xen kẽ vẫn tích luỹ đủ xác nhận, không kẹt im lặng', () => {
+    // Arrange: severity dao động là chuyện thường khi bbox rung quanh ngưỡng.
+    // Đếm theo từng mức sẽ không bao giờ đủ N và app im lặng vĩnh viễn — mà
+    // im lặng bị hiểu thành "đường trống".
+    const policy = createAnnouncementPolicy();
+    policy.shouldAnnounce(makeAssessment('warning', 'ghế', 0.2), 0);
+
+    // Act
+    const result = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 100);
+
+    // Assert
+    expect(result).toBe(true);
+  });
+
+  test('đường trống cũng cần đủ khung xác nhận mới báo', () => {
+    // Arrange: vật cản biến mất đúng một khung rồi hiện lại — không được phép
+    // chen câu "Đường trống." vào giữa.
+    const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('danger', 'ghế', 0.4));
+    policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
+
+    // Act
+    const flicker = policy.shouldAnnounce(makeAssessment('safe'), 100);
+
+    // Assert
+    expect(flicker).toBe(false);
+  });
+
+  test('re-escalation to danger after safe bypasses the danger cooldown', () => {
+    // Arrange: danger announced at t=0, safe at t=100, danger again at t=200
+    const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('danger', 'ghế', 0.4));
+    policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
+    warmStreak(policy, makeAssessment('safe'), 50);
+    policy.shouldAnnounce(makeAssessment('safe'), 100);
+    warmStreak(policy, makeAssessment('danger', 'ghế', 0.4), 150);
 
     // Act
     const result = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 200);

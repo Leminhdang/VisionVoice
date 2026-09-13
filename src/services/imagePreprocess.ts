@@ -6,7 +6,10 @@
 
 import type { Image } from 'react-native-nitro-image';
 
-import { TFLITE_MODEL_INPUT_SIZE } from '../constants/config';
+import {
+  TFLITE_MODEL_INPUT_SIZE,
+  TFLITE_MODEL_PAD_BYTE,
+} from '../constants/config';
 
 /** nitro-image không re-export RawPixelData ở package root — lấy từ Image. */
 type RawPixelData = ReturnType<Image['toRawPixelData']>;
@@ -29,30 +32,34 @@ const CHANNEL_OFFSETS: Record<string, readonly [number, number, number]> = {
 const PACKED_FORMATS = new Set(['RGB', 'BGR']);
 
 /**
- * Ép RawPixelData về buffer uint8 RGB liên tục, kích thước size × size × 3.
+ * Dán RawPixelData (đã thu nhỏ giữ tỉ lệ) vào ô vuông size × size × 3, NEO GÓC
+ * TRÊN TRÁI, phần thừa để nguyên màu đệm.
  *
- * Model nhận uint8 với quantization scale = 1/128, zero_point = 127, nên
- * byte thô 0–255 đã đúng — không chuẩn hoá thủ công.
+ * Model nhận uint8 với quantization scale = 1/128, zero_point = 127, nên byte
+ * thô 0–255 đã đúng — không chuẩn hoá thủ công.
  */
-function rawPixelDataToRgb(raw: RawPixelData, size: number): ArrayBuffer {
+function rawPixelDataToLetterboxedRgb(
+  raw: RawPixelData,
+  size: number,
+): ArrayBuffer {
   const offsets = CHANNEL_OFFSETS[raw.pixelFormat];
   if (offsets === undefined) {
     throw new Error(`Định dạng pixel không hỗ trợ: ${raw.pixelFormat}`);
   }
-  if (raw.width !== size || raw.height !== size) {
+  if (raw.width > size || raw.height > size) {
     throw new Error(`Kích thước ảnh sai: ${raw.width}×${raw.height}`);
   }
 
   const src = new Uint8Array(raw.buffer);
   const bytesPerPixel = PACKED_FORMATS.has(raw.pixelFormat) ? 3 : 4;
-  const rowStride = src.length / size; // chịu được row padding
-  const dst = new Uint8Array(size * size * 3);
+  const rowStride = src.length / raw.height; // chịu được row padding
+  const dst = new Uint8Array(size * size * 3).fill(TFLITE_MODEL_PAD_BYTE);
   const [rOffset, gOffset, bOffset] = offsets;
 
-  let d = 0;
-  for (let y = 0; y < size; y++) {
+  for (let y = 0; y < raw.height; y++) {
     let s = y * rowStride;
-    for (let x = 0; x < size; x++) {
+    let d = y * size * 3;
+    for (let x = 0; x < raw.width; x++) {
       dst[d] = src[s + rOffset];
       dst[d + 1] = src[s + gOffset];
       dst[d + 2] = src[s + bOffset];
@@ -65,18 +72,33 @@ function rawPixelDataToRgb(raw: RawPixelData, size: number): ArrayBuffer {
 }
 
 /**
- * Resize native về ô vuông TFLITE_MODEL_INPUT_SIZE rồi trả buffer RGB cho model.
+ * Thu nhỏ GIỮ NGUYÊN TỈ LỆ về ô vuông TFLITE_MODEL_INPUT_SIZE rồi trả buffer
+ * RGB cho model (letterbox).
  *
- * Resize là kéo giãn (không giữ tỉ lệ) — cố ý: box chuẩn hoá do model trả về
- * map ngược lên full-frame vẫn đúng, nên heuristic diện tích bbox trong
- * obstacleDetector giữ nguyên ý nghĩa.
+ * Bản trước kéo giãn không giữ tỉ lệ, lập luận rằng box chuẩn hoá map ngược
+ * lên full-frame vẫn đúng. Đúng về hình học, nhưng bỏ qua chuyện CHÍNH MODEL
+ * đang nhìn vật thể méo: khung 640×480 bị bóp ngang 1,33× nên người, xe máy,
+ * cột điện đều sai tỉ lệ so với dữ liệu EfficientDet-Lite0 được train. Giữ tỉ
+ * lệ là khớp lại đúng tiền xử lý gốc của model.
+ *
+ * QUY ƯỚC NEO GÓC TRÊN TRÁI — parseDetections() trong tfliteDetector.ts phụ
+ * thuộc trực tiếp vào quy ước này để map box ngược về khung gốc. Đổi bên này
+ * phải đổi bên kia.
+ *
+ * Màu đệm TFLITE_MODEL_PAD_BYTE = 128 không phải tuỳ tiện: sau khi dequantize
+ * (128 − 127) / 128 ≈ 0, tức đúng bằng vùng đệm 0 mà tiền xử lý EfficientDet
+ * gốc tạo ra. Đệm 0 (đen) sẽ thành −1 sau chuẩn hoá, tạo viền giả rất đậm.
  */
 export async function imageToModelInput(image: Image): Promise<ArrayBuffer> {
   const size = TFLITE_MODEL_INPUT_SIZE;
-  const resized = await image.resizeAsync(size, size);
+  const scale = Math.min(size / image.width, size / image.height);
+  const scaledWidth = Math.max(1, Math.round(image.width * scale));
+  const scaledHeight = Math.max(1, Math.round(image.height * scale));
+
+  const resized = await image.resizeAsync(scaledWidth, scaledHeight);
   try {
     const raw = await resized.toRawPixelDataAsync();
-    return rawPixelDataToRgb(raw, size);
+    return rawPixelDataToLetterboxedRgb(raw, size);
   } finally {
     resized.dispose();
   }

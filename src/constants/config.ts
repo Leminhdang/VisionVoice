@@ -16,6 +16,12 @@ export const TARGET_PICTURE_SIZE = 1280;
 export const OBSTACLE_ASSESSMENT_THROTTLE_MS = 900;
 export const TFLITE_MODEL_INPUT_SIZE = 320;
 /**
+ * Màu đệm letterbox, dạng byte uint8. 128 chứ không phải 0: sau dequantize
+ * (128 − 127) / 128 ≈ 0, khớp đúng vùng đệm 0 của tiền xử lý EfficientDet gốc.
+ * Đệm 0 (đen) thành −1 sau chuẩn hoá, tạo viền giả rất đậm quanh ảnh.
+ */
+export const TFLITE_MODEL_PAD_BYTE = 128;
+/**
  * Độ phân giải chụp cho vòng dò vật cản. Mặc định của VisionCamera là UHD 4:3
  * (~4080×3060) — thừa thãi vì model chỉ ăn 320×320, mà decode ảnh 12MP tốn
  * ~700ms/frame và đẩy ION heap lên cao.
@@ -69,6 +75,35 @@ export const OBSTACLE_MODEL_SIZE_BYTES = 4_563_519;
 export const OBSTACLE_MODEL_NOTICE_DELAY_MS = 600;
 
 export const OBSTACLE_SCORE_MIN = 0.35;
+/**
+ * Cạnh ĐÁY của bbox phải nằm dưới mốc này (tỉ lệ theo chiều cao khung) thì vật
+ * mới được tính là nằm trên đường đi.
+ *
+ * Diện tích bbox một mình là thước đo khoảng cách rất yếu: ô tô bên kia đường
+ * và cái ghế cách một mét cho diện tích như nhau. Với camera đeo ngực hướng
+ * thẳng, vật đặt trên mặt đất càng gần thì đáy càng tụt xuống thấp trong
+ * khung, nên đáy bbox là tín hiệu khoảng cách tốt hơn hẳn — và vật có đáy nằm
+ * ở nửa trên khung thì gần như chắc chắn ở xa, hoặc ở trên cao ngoài lối đi.
+ *
+ * HẠN CHẾ ĐÃ BIẾT: lọc theo mặt phẳng nền nên vật treo lơ lửng (biển hiệu
+ * thấp, cành cây) có thể bị loại oan. Những vật đó phần lớn không nằm trong
+ * COCO nên model vốn đã không thấy; đặt về 0 để tắt hẳn bộ lọc này.
+ */
+export const OBSTACLE_MIN_BOTTOM_RATIO = 0.45;
+/**
+ * Số khung liên tiếp phải cùng thấy vật cản (hoặc cùng thấy đường trống) trước
+ * khi được phép nói ra.
+ *
+ * Trước đây một khung nhiễu duy nhất đủ để hét "Dừng lại!". Đổi lại, cảnh báo
+ * bị trễ thêm (N − 1) × OBSTACLE_ASSESSMENT_THROTTLE_MS — với N = 2 là ~0,9 s.
+ * Đây là đánh đổi an toàn có thật, chỉnh xuống 1 là tắt hẳn xác nhận.
+ *
+ * Đếm theo "có vật cản / không có vật cản" chứ không theo từng mức severity:
+ * nếu đếm theo severity thì chuỗi warning/danger/warning xen kẽ sẽ không bao
+ * giờ đủ N khung cùng mức, thành ra im lặng — mà im lặng bị hiểu là đường
+ * trống, đúng thứ nguy hiểm nhất.
+ */
+export const OBSTACLE_CONFIRM_FRAMES = 2;
 export const DANGER_AREA_RATIO = 0.35;
 export const WARNING_AREA_RATIO = 0.18;
 export const CENTER_BAND_WIDTH_RATIO: Record<'low' | 'medium' | 'high', number> = {

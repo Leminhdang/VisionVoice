@@ -50,8 +50,9 @@ function makeOutputs(
 }
 
 describe('parseDetections', () => {
-  test('converts a normalised box to pixel coordinates', () => {
-    // Arrange: nửa trái, nửa trên của frame
+  test('gỡ letterbox: cả hai trục nhân cùng cạnh dài của khung', () => {
+    // Arrange: khung 400×200 letterbox vào ô vuông 320 → ảnh thật chiếm nửa
+    // trên ô vuông, nên ymax = 0.5 chính là đáy ảnh thật, không phải giữa ảnh.
     const outputs = makeOutputs([
       { box: [0, 0, 0.5, 0.5], category: PERSON_CLASS_INDEX, score: HIGH_SCORE },
     ]);
@@ -59,17 +60,34 @@ describe('parseDetections', () => {
     // Act
     const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
 
-    // Assert
+    // Assert: nửa trái theo chiều ngang, TRỌN chiều cao khung gốc.
     expect(result).toEqual([
       {
-        frame: { origin: { x: 0, y: 0 }, size: { x: 200, y: 100 } },
+        frame: { origin: { x: 0, y: 0 }, size: { x: 200, y: 200 } },
         labels: [{ text: 'person', confidence: HIGH_SCORE }],
       },
     ]);
   });
 
   test('maps a non-zero box origin to the correct offset', () => {
-    // Arrange: x 0.25..0.75, y 0.5..1.0
+    // Arrange: x 0.25..0.75, y 0.125..0.375 — nằm trọn trong vùng ảnh thật.
+    const outputs = makeOutputs([
+      { box: [0.125, 0.25, 0.375, 0.75], category: PERSON_CLASS_INDEX, score: 0.8 },
+    ]);
+
+    // Act
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+
+    // Assert
+    expect(result[0].frame).toEqual({
+      origin: { x: 100, y: 50 },
+      size: { x: 200, y: 100 },
+    });
+  });
+
+  test('bỏ box nằm trọn trong vùng đệm letterbox', () => {
+    // Arrange: y 0.5..1.0 của ô vuông là phần đệm dưới ảnh 400×200, không phải
+    // nửa dưới khung. Bản cũ map nhầm thành nửa dưới khung và báo vật cản ma.
     const outputs = makeOutputs([
       { box: [0.5, 0.25, 1, 0.75], category: PERSON_CLASS_INDEX, score: 0.8 },
     ]);
@@ -78,8 +96,21 @@ describe('parseDetections', () => {
     const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
 
     // Assert
+    expect(result).toEqual([]);
+  });
+
+  test('kẹp box tràn từ vùng ảnh sang vùng đệm về đúng biên khung', () => {
+    // Arrange: y 0.25..0.75 — nửa trên nằm trong ảnh, nửa dưới lấn vào đệm.
+    const outputs = makeOutputs([
+      { box: [0.25, 0, 0.75, 0.5], category: PERSON_CLASS_INDEX, score: 0.9 },
+    ]);
+
+    // Act
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+
+    // Assert: đáy bị kẹp về 200 thay vì tràn ra 300.
     expect(result[0].frame).toEqual({
-      origin: { x: 100, y: 100 },
+      origin: { x: 0, y: 100 },
       size: { x: 200, y: 100 },
     });
   });
@@ -134,7 +165,7 @@ describe('parseDetections', () => {
 
     // Assert
     expect(result).toHaveLength(1);
-    expect(result[0].frame.size).toEqual({ x: 200, y: 100 });
+    expect(result[0].frame.size).toEqual({ x: 200, y: 200 });
   });
 
   test('returns an empty labels array for a ghost class', () => {

@@ -16,6 +16,10 @@ import type { DetectedObject } from './obstacleDetector';
 /** Số tensor output mà model có NMS dựng sẵn phải trả về. */
 const EXPECTED_OUTPUT_COUNT = 4;
 
+function clamp(value: number, min: number, max: number): number {
+  return value < min ? min : value > max ? max : value;
+}
+
 /** Bốn tensor đầu ra đã được nhận dạng theo vai trò, không theo chỉ số. */
 interface ResolvedOutputs {
   boxes: Float32Array;
@@ -119,6 +123,15 @@ export function readTopScore(outputData: ArrayBuffer[]): number {
  * Chỉ đọc `count` slot đầu tiên — các slot còn lại trong tensor là rác đệm.
  * Nhãn ghost (COCO ID không tồn tại) cho `labels` rỗng; obstacleDetector coi
  * detection không nhãn là vật cản với score 1, nên vẫn được tính.
+ *
+ * GỠ LETTERBOX: imagePreprocess.imageToModelInput() thu nhỏ giữ tỉ lệ rồi neo
+ * ảnh vào GÓC TRÊN TRÁI của ô vuông đầu vào, phần thừa là đệm. Nên toạ độ
+ * chuẩn hoá model trả về tính trên ô vuông đó, KHÔNG phải trên khung gốc:
+ * nhân riêng từng trục với chiều rộng/cao gốc là sai đúng bằng tỉ lệ khung.
+ *
+ * Vì hệ số thu nhỏ là min(size/w, size/h) = size / max(w, h), gỡ đệm rút gọn
+ * thành: nhân CẢ HAI trục với cùng một số là cạnh dài của khung gốc. Box rơi
+ * vào vùng đệm sẽ vượt biên nên phải kẹp lại.
  */
 export function parseDetections(
   outputData: ArrayBuffer[],
@@ -130,6 +143,7 @@ export function parseDetections(
 
   const { boxes, categories, scores } = resolved;
   const count = Math.min(resolved.count, scores.length);
+  const span = Math.max(frameWidth, frameHeight);
 
   const objects: DetectedObject[] = [];
 
@@ -143,15 +157,21 @@ export function parseDetections(
     const ymax = boxes[boxOffset + 2];
     const xmax = boxes[boxOffset + 3];
 
+    const left = clamp(xmin * span, 0, frameWidth);
+    const top = clamp(ymin * span, 0, frameHeight);
+    const right = clamp(xmax * span, 0, frameWidth);
+    const bottom = clamp(ymax * span, 0, frameHeight);
+
+    // Box nằm trọn trong vùng đệm bị kẹp thành bề ngang hoặc bề cao bằng 0.
+    // Diện tích 0 luôn ra 'safe' nên vô hại, nhưng bỏ luôn cho sạch.
+    if (right <= left || bottom <= top) continue;
+
     const label = COCO_90_LABELS[Math.round(categories[i])] ?? null;
 
     objects.push({
       frame: {
-        origin: { x: xmin * frameWidth, y: ymin * frameHeight },
-        size: {
-          x: (xmax - xmin) * frameWidth,
-          y: (ymax - ymin) * frameHeight,
-        },
+        origin: { x: left, y: top },
+        size: { x: right - left, y: bottom - top },
       },
       labels: label !== null ? [{ text: label, confidence: score }] : [],
     });
