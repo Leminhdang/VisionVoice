@@ -13,7 +13,25 @@ export const TARGET_PICTURE_SIZE = 1280;
 
 
 // Obstacle detection
-export const OBSTACLE_ASSESSMENT_THROTTLE_MS = 900;
+/**
+ * Nhịp quét MỤC TIÊU, tính từ lúc bắt đầu khung này tới lúc bắt đầu khung sau.
+ *
+ * Bản trước là khoảng NGHỈ SAU khi làm xong, nên chu kỳ thật = 900 + thời gian
+ * xử lý. Đo trên máy thật: xử lý ~557 ms nên chu kỳ thành ~1 480 ms, tức 0,68
+ * khung/giây, và với OBSTACLE_CONFIRM_FRAMES = 2 thì một cảnh báo nguy hiểm mất
+ * TRỌN 3 GIÂY mới nói ra — người đi bộ 1,4 m/s đã đi thêm hơn 4 mét.
+ *
+ * Tính theo hạn chót thì nhịp không còn phụ thuộc máy nhanh hay chậm: máy nhanh
+ * nghỉ nhiều, máy chậm nghỉ ít nhưng không bao giờ dồn khung.
+ */
+export const OBSTACLE_TARGET_PERIOD_MS = 700;
+/**
+ * Khoảng nghỉ tối thiểu giữa hai khung khi xử lý đã lâu hơn nhịp mục tiêu.
+ *
+ * Không để 0: cần chừa chỗ cho JS thread chạy việc khác (chạm nút, TTS, điều
+ * hướng), và giữ duty cycle dưới 100% để máy khỏi nóng dồn trong phiên dài.
+ */
+export const OBSTACLE_MIN_FRAME_GAP_MS = 120;
 export const TFLITE_MODEL_INPUT_SIZE = 320;
 /**
  * Màu đệm letterbox, dạng byte uint8. 128 chứ không phải 0: sau dequantize
@@ -116,7 +134,7 @@ export const OBSTACLE_MIN_BOTTOM_RATIO = 0.45;
  * khi được phép nói ra.
  *
  * Trước đây một khung nhiễu duy nhất đủ để hét "Dừng lại!". Đổi lại, cảnh báo
- * bị trễ thêm (N − 1) × OBSTACLE_ASSESSMENT_THROTTLE_MS — với N = 2 là ~0,9 s.
+ * bị trễ thêm (N − 1) × chu kỳ quét thật — với N = 2 là ~0,7 s.
  * Đây là đánh đổi an toàn có thật, chỉnh xuống 1 là tắt hẳn xác nhận.
  *
  * Đếm theo "có vật cản / không có vật cản" chứ không theo từng mức severity:

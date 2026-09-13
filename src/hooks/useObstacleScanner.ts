@@ -3,9 +3,10 @@ import type { TensorflowPlugin } from 'react-native-fast-tflite';
 import type { CameraPhotoOutput } from 'react-native-vision-camera';
 
 import {
-  OBSTACLE_ASSESSMENT_THROTTLE_MS,
   OBSTACLE_MAX_DETECT_FAILURES,
+  OBSTACLE_MIN_FRAME_GAP_MS,
   OBSTACLE_MODEL_NOTICE_DELAY_MS,
+  OBSTACLE_TARGET_PERIOD_MS,
 } from '../constants/config';
 import { OBSTACLE } from '../constants/strings';
 import { speakExclusive } from '../services/audioSession';
@@ -224,33 +225,45 @@ export function useObstacleScanner(
       }
 
       let photo = null;
+      const cycleStart = Date.now();
       try {
         const frameId = nextFrameId();
-        const start = Date.now();
 
         photo = await output.capturePhoto({ enableShutterSound: false }, {});
+        const capturedAt = Date.now();
 
-        // Decode + resize về 320×320 chạy native; toImage() áp luôn EXIF
+        // Decode + resize về ô vuông model chạy native; toImage() áp luôn EXIF
         // orientation nên frame đưa vào model mới thực sự thẳng đứng.
         const image = await photo.toImageAsync();
+        const decodedAt = Date.now();
+
         let inputBuffer: ArrayBuffer;
         try {
           inputBuffer = await imageToModelInput(image);
         } finally {
           image.dispose();
         }
+        const preparedAt = Date.now();
 
         // Run TFLite inference
         const outputs = model.runSync([inputBuffer]);
-        const detectMs = Date.now() - start;
+        const inferredAt = Date.now();
+        const detectMs = inferredAt - cycleStart;
 
         const objects = parseDetections(outputs, photo.width, photo.height);
         failureCountRef.current = 0;
 
+        // Tách từng chặng: 557 ms/khung đo được không cho biết nghẽn ở chụp,
+        // decode, tiền xử lý hay suy luận — mà bốn chỗ đó cần bốn cách sửa
+        // hoàn toàn khác nhau.
         logMetric({
           event: 'obstacle_frame',
           frameId,
           detectMs,
+          captureMs: capturedAt - cycleStart,
+          decodeMs: decodedAt - capturedAt,
+          prepMs: preparedAt - decodedAt,
+          inferMs: inferredAt - preparedAt,
           detections: objects.length,
           topScore: Number(readTopScore(outputs).toFixed(3)),
         });
@@ -285,13 +298,25 @@ export function useObstacleScanner(
         }
       } finally {
         photo?.dispose();
-        scheduleNext();
+        scheduleNext(Date.now() - cycleStart);
       }
     };
 
-    const scheduleNext = (): void => {
+    /**
+     * Hẹn khung kế tiếp theo HẠN CHÓT, không phải nghỉ cứng sau khi làm xong.
+     *
+     * Nghỉ cứng khiến chu kỳ thật = nghỉ + thời gian xử lý, nên máy càng chậm
+     * cảnh báo càng trễ — đúng chiều sai. Trừ đi phần đã tiêu thì nhịp giữ
+     * nguyên trên mọi máy, chỉ co lại tới OBSTACLE_MIN_FRAME_GAP_MS khi máy
+     * không theo kịp.
+     */
+    const scheduleNext = (elapsedMs = 0): void => {
       if (!isCyclingRef.current) return;
-      timerRef.current = setTimeout(() => void cycle(), OBSTACLE_ASSESSMENT_THROTTLE_MS);
+      const delay = Math.max(
+        OBSTACLE_MIN_FRAME_GAP_MS,
+        OBSTACLE_TARGET_PERIOD_MS - elapsedMs,
+      );
+      timerRef.current = setTimeout(() => void cycle(), delay);
     };
 
     // Bắt đầu cycle đầu tiên

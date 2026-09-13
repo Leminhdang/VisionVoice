@@ -29,7 +29,16 @@ export type MetricEvent =
   | {
       event: 'obstacle_frame';
       frameId: number;
+      /** Tổng thời gian một khung: chụp + decode + tiền xử lý + suy luận. */
       detectMs: number;
+      /** Chụp ảnh từ camera. */
+      captureMs: number;
+      /** Decode ảnh nén thành bitmap (đã áp EXIF orientation). */
+      decodeMs: number;
+      /** Cắt/thu nhỏ về ô vuông model + dựng buffer RGB trong JS. */
+      prepMs: number;
+      /** Riêng phần chạy model. Tách ra để biết delegate GPU có ăn không. */
+      inferMs: number;
       detections: number;
       /** Điểm cao nhất trước khi lọc ngưỡng — xem readTopScore(). */
       topScore: number;
