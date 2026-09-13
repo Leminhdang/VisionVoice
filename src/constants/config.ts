@@ -21,6 +21,27 @@ export const TFLITE_MODEL_INPUT_SIZE = 320;
  * Đệm 0 (đen) thành −1 sau chuẩn hoá, tạo viền giả rất đậm quanh ảnh.
  */
 export const TFLITE_MODEL_PAD_BYTE = 128;
+
+/**
+ * Cách ép khung hình chữ nhật của camera vào ô vuông đầu vào của model.
+ *
+ * - 'crop'      — cắt vuông ở giữa khung rồi thu nhỏ. Dùng trọn ô vuông cho
+ *                 nội dung thật, nên vật ở giữa có độ phân giải cao hơn ~33%
+ *                 so với 'letterbox' (640×480 → cắt 480×480 → scale 0,667 thay
+ *                 vì 0,5). Đổi lại mất rìa trái/phải: mỗi bên 12,5% bề ngang.
+ * - 'letterbox' — thu nhỏ giữ tỉ lệ rồi đệm cho đủ vuông. Không mất gì, nhưng
+ *                 25% ô vuông là đệm vô ích.
+ *
+ * Mặc định 'crop' vì phần bị cắt nằm NGOÀI vùng đánh giá: dải giữa rộng nhất
+ * (CENTER_BAND_WIDTH_RATIO.high = 0,5) chỉ chiếm 0,25–0,75 bề ngang, trong khi
+ * cắt vuông vẫn giữ 0,125–0,875. Tức là không mất pixel nào thuộc vùng thật sự
+ * được xét, mà lại được thêm độ phân giải.
+ *
+ * Đổi hằng này là đổi luôn cách parseDetections() map box ngược — hai bên đọc
+ * chung một hằng nên không lệch nhau được.
+ */
+export type TfliteInputFit = 'crop' | 'letterbox';
+export const TFLITE_INPUT_FIT: TfliteInputFit = 'crop';
 /**
  * Độ phân giải chụp cho vòng dò vật cản. Mặc định của VisionCamera là UHD 4:3
  * (~4080×3060) — thừa thãi vì model chỉ ăn 320×320, mà decode ảnh 12MP tốn

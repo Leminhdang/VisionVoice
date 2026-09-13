@@ -7,6 +7,7 @@
 import type { Image } from 'react-native-nitro-image';
 
 import {
+  TFLITE_INPUT_FIT,
   TFLITE_MODEL_INPUT_SIZE,
   TFLITE_MODEL_PAD_BYTE,
 } from '../constants/config';
@@ -32,16 +33,15 @@ const CHANNEL_OFFSETS: Record<string, readonly [number, number, number]> = {
 const PACKED_FORMATS = new Set(['RGB', 'BGR']);
 
 /**
- * Dán RawPixelData (đã thu nhỏ giữ tỉ lệ) vào ô vuông size × size × 3, NEO GÓC
- * TRÊN TRÁI, phần thừa để nguyên màu đệm.
+ * Dán RawPixelData vào ô vuông size × size × 3, NEO GÓC TRÊN TRÁI, phần thừa
+ * để nguyên màu đệm.
+ *
+ * Ở chế độ 'crop' ảnh đã vuông sẵn nên lấp kín, không byte đệm nào được dùng.
  *
  * Model nhận uint8 với quantization scale = 1/128, zero_point = 127, nên byte
  * thô 0–255 đã đúng — không chuẩn hoá thủ công.
  */
-function rawPixelDataToLetterboxedRgb(
-  raw: RawPixelData,
-  size: number,
-): ArrayBuffer {
+function rawPixelDataToSquareRgb(raw: RawPixelData, size: number): ArrayBuffer {
   const offsets = CHANNEL_OFFSETS[raw.pixelFormat];
   if (offsets === undefined) {
     throw new Error(`Định dạng pixel không hỗ trợ: ${raw.pixelFormat}`);
@@ -72,34 +72,57 @@ function rawPixelDataToLetterboxedRgb(
 }
 
 /**
- * Thu nhỏ GIỮ NGUYÊN TỈ LỆ về ô vuông TFLITE_MODEL_INPUT_SIZE rồi trả buffer
- * RGB cho model (letterbox).
+ * Cắt vuông giữa khung rồi thu nhỏ về size × size — chế độ 'crop'.
  *
- * Bản trước kéo giãn không giữ tỉ lệ, lập luận rằng box chuẩn hoá map ngược
+ * Phần bị cắt nằm ngoài dải giữa mà obstacleDetector xét, nên đổi lại được
+ * thêm độ phân giải cho đúng vùng quan trọng. Xem ghi chú ở TFLITE_INPUT_FIT.
+ */
+async function cropToSquare(image: Image, size: number): Promise<Image> {
+  const side = Math.min(image.width, image.height);
+  const startX = Math.round((image.width - side) / 2);
+  const startY = Math.round((image.height - side) / 2);
+  // cropAsync nhận toạ độ ĐIỂM CUỐI, không phải chiều rộng/cao.
+  const cropped = await image.cropAsync(startX, startY, startX + side, startY + side);
+  try {
+    return await cropped.resizeAsync(size, size);
+  } finally {
+    cropped.dispose();
+  }
+}
+
+/**
+ * Thu nhỏ giữ tỉ lệ, neo góc trên trái, phần thừa để đệm — chế độ 'letterbox'.
+ */
+async function letterboxToSquare(image: Image, size: number): Promise<Image> {
+  const scale = Math.min(size / image.width, size / image.height);
+  return image.resizeAsync(
+    Math.max(1, Math.round(image.width * scale)),
+    Math.max(1, Math.round(image.height * scale)),
+  );
+}
+
+/**
+ * Ép khung camera vào ô vuông đầu vào của model rồi trả buffer RGB.
+ *
+ * Bản đầu tiên kéo giãn không giữ tỉ lệ, lập luận rằng box chuẩn hoá map ngược
  * lên full-frame vẫn đúng. Đúng về hình học, nhưng bỏ qua chuyện CHÍNH MODEL
  * đang nhìn vật thể méo: khung 640×480 bị bóp ngang 1,33× nên người, xe máy,
- * cột điện đều sai tỉ lệ so với dữ liệu EfficientDet-Lite0 được train. Giữ tỉ
- * lệ là khớp lại đúng tiền xử lý gốc của model.
+ * cột điện đều sai tỉ lệ so với dữ liệu EfficientDet-Lite0 được train. Cả hai
+ * chế độ hiện tại đều giữ đúng tỉ lệ.
  *
- * QUY ƯỚC NEO GÓC TRÊN TRÁI — parseDetections() trong tfliteDetector.ts phụ
- * thuộc trực tiếp vào quy ước này để map box ngược về khung gốc. Đổi bên này
- * phải đổi bên kia.
- *
- * Màu đệm TFLITE_MODEL_PAD_BYTE = 128 không phải tuỳ tiện: sau khi dequantize
- * (128 − 127) / 128 ≈ 0, tức đúng bằng vùng đệm 0 mà tiền xử lý EfficientDet
- * gốc tạo ra. Đệm 0 (đen) sẽ thành −1 sau chuẩn hoá, tạo viền giả rất đậm.
+ * parseDetections() trong tfliteDetector.ts map box ngược theo ĐÚNG chế độ
+ * TFLITE_INPUT_FIT này — hai bên đọc chung một hằng nên không lệch nhau được.
  */
 export async function imageToModelInput(image: Image): Promise<ArrayBuffer> {
   const size = TFLITE_MODEL_INPUT_SIZE;
-  const scale = Math.min(size / image.width, size / image.height);
-  const scaledWidth = Math.max(1, Math.round(image.width * scale));
-  const scaledHeight = Math.max(1, Math.round(image.height * scale));
-
-  const resized = await image.resizeAsync(scaledWidth, scaledHeight);
+  const fitted =
+    TFLITE_INPUT_FIT === 'crop'
+      ? await cropToSquare(image, size)
+      : await letterboxToSquare(image, size);
   try {
-    const raw = await resized.toRawPixelDataAsync();
-    return rawPixelDataToLetterboxedRgb(raw, size);
+    const raw = await fitted.toRawPixelDataAsync();
+    return rawPixelDataToSquareRgb(raw, size);
   } finally {
-    resized.dispose();
+    fitted.dispose();
   }
 }

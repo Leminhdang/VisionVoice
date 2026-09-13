@@ -10,7 +10,8 @@
 // - outputs[3] 'number of detections' [1]       float32
 
 import { COCO_90_LABELS } from '../constants/cocoLabels';
-import { OBSTACLE_SCORE_MIN } from '../constants/config';
+import { OBSTACLE_SCORE_MIN, TFLITE_INPUT_FIT } from '../constants/config';
+import type { TfliteInputFit } from '../constants/config';
 import type { DetectedObject } from './obstacleDetector';
 
 /** Số tensor output mà model có NMS dựng sẵn phải trả về. */
@@ -18,6 +19,41 @@ const EXPECTED_OUTPUT_COUNT = 4;
 
 function clamp(value: number, min: number, max: number): number {
   return value < min ? min : value > max ? max : value;
+}
+
+/** Phép biến đổi đưa toạ độ chuẩn hoá của model về pixel trên khung gốc. */
+interface BoxMapping {
+  offsetX: number;
+  offsetY: number;
+  span: number;
+}
+
+/**
+ * Nghịch đảo của imagePreprocess.imageToModelInput().
+ *
+ * Cả hai chế độ đều rút gọn về cùng một dạng `gốc = offset + chuẩn_hoá × span`,
+ * nên vòng lặp bên dưới không phải rẽ nhánh:
+ *
+ * - 'letterbox' — ảnh thu nhỏ theo hệ số min(size/w, size/h) = size / max(w, h)
+ *   rồi neo góc trên trái. Nghịch đảo: nhân CẢ HAI trục với cạnh dài của khung,
+ *   không lệch gì. Box rơi vào vùng đệm sẽ vượt biên nên phải kẹp.
+ * - 'crop' — cắt ô vuông cạnh min(w, h) ở giữa khung. Nghịch đảo: nhân cả hai
+ *   trục với cạnh ô vuông đó rồi cộng lại đúng phần lề đã cắt.
+ */
+function getBoxMapping(
+  frameWidth: number,
+  frameHeight: number,
+  fit: TfliteInputFit,
+): BoxMapping {
+  if (fit === 'crop') {
+    const side = Math.min(frameWidth, frameHeight);
+    return {
+      offsetX: (frameWidth - side) / 2,
+      offsetY: (frameHeight - side) / 2,
+      span: side,
+    };
+  }
+  return { offsetX: 0, offsetY: 0, span: Math.max(frameWidth, frameHeight) };
 }
 
 /** Bốn tensor đầu ra đã được nhận dạng theo vai trò, không theo chỉ số. */
@@ -124,26 +160,24 @@ export function readTopScore(outputData: ArrayBuffer[]): number {
  * Nhãn ghost (COCO ID không tồn tại) cho `labels` rỗng; obstacleDetector coi
  * detection không nhãn là vật cản với score 1, nên vẫn được tính.
  *
- * GỠ LETTERBOX: imagePreprocess.imageToModelInput() thu nhỏ giữ tỉ lệ rồi neo
- * ảnh vào GÓC TRÊN TRÁI của ô vuông đầu vào, phần thừa là đệm. Nên toạ độ
- * chuẩn hoá model trả về tính trên ô vuông đó, KHÔNG phải trên khung gốc:
- * nhân riêng từng trục với chiều rộng/cao gốc là sai đúng bằng tỉ lệ khung.
- *
- * Vì hệ số thu nhỏ là min(size/w, size/h) = size / max(w, h), gỡ đệm rút gọn
- * thành: nhân CẢ HAI trục với cùng một số là cạnh dài của khung gốc. Box rơi
- * vào vùng đệm sẽ vượt biên nên phải kẹp lại.
+ * Toạ độ model trả về được chuẩn hoá theo Ô VUÔNG ĐẦU VÀO, không phải theo
+ * khung gốc — nhân riêng từng trục với chiều rộng/cao gốc là sai đúng bằng tỉ
+ * lệ khung. getBoxMapping() lo phần gỡ ngược, theo đúng chế độ TFLITE_INPUT_FIT
+ * mà imagePreprocess đã dùng. `fit` để mặc định theo hằng đó; chỉ test mới
+ * truyền tay, để khẳng định không phụ thuộc giá trị hằng đang đặt.
  */
 export function parseDetections(
   outputData: ArrayBuffer[],
   frameWidth: number,
   frameHeight: number,
+  fit: TfliteInputFit = TFLITE_INPUT_FIT,
 ): DetectedObject[] {
   const resolved = resolveOutputs(outputData);
   if (resolved === null) return [];
 
   const { boxes, categories, scores } = resolved;
   const count = Math.min(resolved.count, scores.length);
-  const span = Math.max(frameWidth, frameHeight);
+  const { offsetX, offsetY, span } = getBoxMapping(frameWidth, frameHeight, fit);
 
   const objects: DetectedObject[] = [];
 
@@ -157,10 +191,10 @@ export function parseDetections(
     const ymax = boxes[boxOffset + 2];
     const xmax = boxes[boxOffset + 3];
 
-    const left = clamp(xmin * span, 0, frameWidth);
-    const top = clamp(ymin * span, 0, frameHeight);
-    const right = clamp(xmax * span, 0, frameWidth);
-    const bottom = clamp(ymax * span, 0, frameHeight);
+    const left = clamp(offsetX + xmin * span, 0, frameWidth);
+    const top = clamp(offsetY + ymin * span, 0, frameHeight);
+    const right = clamp(offsetX + xmax * span, 0, frameWidth);
+    const bottom = clamp(offsetY + ymax * span, 0, frameHeight);
 
     // Box nằm trọn trong vùng đệm bị kẹp thành bề ngang hoặc bề cao bằng 0.
     // Diện tích 0 luôn ra 'safe' nên vô hại, nhưng bỏ luôn cho sạch.

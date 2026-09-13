@@ -58,7 +58,7 @@ describe('parseDetections', () => {
     ]);
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert: nửa trái theo chiều ngang, TRỌN chiều cao khung gốc.
     expect(result).toEqual([
@@ -76,7 +76,7 @@ describe('parseDetections', () => {
     ]);
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert
     expect(result[0].frame).toEqual({
@@ -93,7 +93,7 @@ describe('parseDetections', () => {
     ]);
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert
     expect(result).toEqual([]);
@@ -106,7 +106,7 @@ describe('parseDetections', () => {
     ]);
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert: đáy bị kẹp về 200 thay vì tràn ra 300.
     expect(result[0].frame).toEqual({
@@ -126,7 +126,7 @@ describe('parseDetections', () => {
     ]);
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert
     expect(result).toEqual([]);
@@ -144,7 +144,7 @@ describe('parseDetections', () => {
     ]);
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert
     expect(result).toHaveLength(1);
@@ -161,11 +161,63 @@ describe('parseDetections', () => {
     );
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert
     expect(result).toHaveLength(1);
     expect(result[0].frame.size).toEqual({ x: 200, y: 200 });
+  });
+
+  test("chế độ 'crop': cộng lại phần lề đã cắt ở hai bên", () => {
+    // Arrange: khung 400×200 cắt vuông giữa → ô 200×200, lề mỗi bên 100px.
+    // Box phủ trọn ô vuông phải map về đúng dải giữa của khung gốc.
+    const outputs = makeOutputs([
+      { box: [0, 0, 1, 1], category: PERSON_CLASS_INDEX, score: HIGH_SCORE },
+    ]);
+
+    // Act
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'crop');
+
+    // Assert
+    expect(result[0].frame).toEqual({
+      origin: { x: 100, y: 0 },
+      size: { x: 200, y: 200 },
+    });
+  });
+
+  test("chế độ 'crop': vật ở tâm ô vuông rơi đúng tâm khung gốc", () => {
+    // Arrange
+    const outputs = makeOutputs([
+      { box: [0.25, 0.25, 0.75, 0.75], category: PERSON_CLASS_INDEX, score: 0.9 },
+    ]);
+
+    // Act
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'crop');
+
+    // Assert: tâm box = (200, 100) = đúng tâm khung 400×200.
+    const { origin, size } = result[0].frame;
+    expect(origin.x + size.x / 2).toBe(FRAME_WIDTH / 2);
+    expect(origin.y + size.y / 2).toBe(FRAME_HEIGHT / 2);
+  });
+
+  test("chế độ 'crop' không có vùng đệm nên không box nào bị bỏ", () => {
+    // Arrange: đúng box mà ở 'letterbox' nằm trọn trong đệm và bị loại.
+    const outputs = makeOutputs([
+      { box: [0.5, 0.25, 1, 0.75], category: PERSON_CLASS_INDEX, score: 0.8 },
+    ]);
+
+    // Act
+    const cropped = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'crop');
+    const letterboxed = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
+
+    // Assert: hai chế độ hiểu cùng một toạ độ theo hai nghĩa khác hẳn nhau —
+    // đúng lý do parseDetections phải biết imagePreprocess đã ép kiểu nào.
+    expect(cropped).toHaveLength(1);
+    expect(cropped[0].frame).toEqual({
+      origin: { x: 150, y: 100 },
+      size: { x: 100, y: 100 },
+    });
+    expect(letterboxed).toEqual([]);
   });
 
   test('returns an empty labels array for a ghost class', () => {
@@ -175,7 +227,7 @@ describe('parseDetections', () => {
     ]);
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert: vẫn là vật cản, chỉ không có nhãn
     expect(result).toHaveLength(1);
@@ -189,7 +241,7 @@ describe('parseDetections', () => {
     ]).slice(0, 3);
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert
     expect(result).toEqual([]);
@@ -203,7 +255,7 @@ describe('parseDetections', () => {
     );
 
     // Act
-    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT);
+    const result = parseDetections(outputs, FRAME_WIDTH, FRAME_HEIGHT, 'letterbox');
 
     // Assert
     expect(result).toEqual([]);
