@@ -1,13 +1,11 @@
-import { Asset } from 'expo-asset';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { loadTensorflowModel } from 'react-native-fast-tflite';
 import type { TensorflowPlugin } from 'react-native-fast-tflite';
 import type { CameraPhotoOutput } from 'react-native-vision-camera';
 
 import {
   OBSTACLE_ASSESSMENT_THROTTLE_MS,
   OBSTACLE_MAX_DETECT_FAILURES,
-  TFLITE_DELEGATES,
+  OBSTACLE_MODEL_NOTICE_DELAY_MS,
 } from '../constants/config';
 import { OBSTACLE } from '../constants/strings';
 import { speakExclusive } from '../services/audioSession';
@@ -19,6 +17,7 @@ import {
   createAnnouncementPolicy,
 } from '../services/obstacleDetector';
 import type { AnnouncementPolicy, Assessment } from '../services/obstacleDetector';
+import { loadObstacleModel } from '../services/obstacleModel';
 import { parseDetections, readTopScore } from '../services/tfliteDetector';
 import { useSettings } from '../state/SettingsContext';
 
@@ -30,26 +29,12 @@ interface UseObstacleScannerResult {
   assessment: Assessment | null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const MODEL_ASSET: number = require('../../assets/models/efficientdet_lite0_detection.tflite');
-
 /**
- * Nạp model qua expo-asset thay vì truyền thẳng require() cho fast-tflite.
- *
- * fast-tflite trên Android đọc model bằng đúng một dòng `URL(path).readBytes()`
- * (HybridAssetLoader.kt). Nếu truyền require(), React Native tự chọn đường dẫn:
- * - bản dev trả URL http tới Metro → tắt Wi-Fi là không nạp được model;
- * - bản release trả TÊN RESOURCE TRẦN không có giao thức
- *   ("models_efficientdet_lite0_detection") → `URL()` ném "no protocol",
- *   hỏng ngay cả khi có mạng.
- * Tức là chế độ dò vật cản chưa từng chạy được offline, trái với thiết kế.
- *
- * `Asset.downloadAsync()` chép model ra một đường dẫn file:// mà `URL()` đọc
- * được ở mọi môi trường và lưu cache: bản release luôn offline; bản dev offline
- * được sau khi đã vào chế độ này một lần lúc còn mạng.
+ * Bọc model dùng chung ở obstacleModel.ts thành state cho scanner.
  *
  * Trả về đúng kiểu TensorflowPlugin như useTensorflowModel để phần còn lại của
- * scanner không phải đổi gì.
+ * scanner không phải đổi gì. Chuẩn bị file và nạp model nằm hết trong service —
+ * hook này chỉ theo dõi kết quả và tự huỷ khi rời màn hình.
  */
 function useLocalTfliteModel(): TensorflowPlugin {
   const [plugin, setPlugin] = useState<TensorflowPlugin>({
@@ -60,28 +45,22 @@ function useLocalTfliteModel(): TensorflowPlugin {
   useEffect(() => {
     let isCancelled = false;
 
-    const load = async (): Promise<void> => {
-      const asset = Asset.fromModule(MODEL_ASSET);
-      await asset.downloadAsync();
-      if (asset.localUri == null) {
-        throw new Error('Không có đường dẫn cục bộ cho model vật cản.');
-      }
-      const model = await loadTensorflowModel({ url: asset.localUri }, TFLITE_DELEGATES);
-      if (!isCancelled) {
-        setPlugin({ model, state: 'loaded' });
-      }
-    };
-
-    load().catch((error: unknown) => {
-      if (isCancelled) {
-        return;
-      }
-      setPlugin({
-        model: undefined,
-        state: 'error',
-        error: error instanceof Error ? error : new Error(String(error)),
+    loadObstacleModel()
+      .then((model) => {
+        if (!isCancelled) {
+          setPlugin({ model, state: 'loaded' });
+        }
+      })
+      .catch((error: unknown) => {
+        if (isCancelled) {
+          return;
+        }
+        setPlugin({
+          model: undefined,
+          state: 'error',
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
       });
-    });
 
     return () => {
       isCancelled = true;
@@ -159,6 +138,24 @@ export function useObstacleScanner(
       console.log('[TFLite] outputs', JSON.stringify(tfModel.model.outputs));
     }
   }, [tfModel.model]);
+
+  /**
+   * Lần đầu sau khi cài, model còn đang chép ra bộ nhớ. Không nói gì thì người
+   * khiếm thị chỉ nghe lời giới thiệu rồi im lặng vài giây — không phân biệt
+   * được với "đường trống".
+   *
+   * flush: false để câu này XẾP HÀNG sau lời giới thiệu màn hình thay vì cắt
+   * ngang nó (tts.speak mặc định flush = true, xem speakWithExpoSpeech).
+   */
+  useEffect(() => {
+    if (!active || tfModel.state !== 'loading') {
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      void speakExclusive(OBSTACLE.PREPARING, { flush: false });
+    }, OBSTACLE_MODEL_NOTICE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [active, tfModel.state]);
 
   /**
    * Model nạp hỏng là hỏng vĩnh viễn — vòng quét bên dưới chỉ thấy

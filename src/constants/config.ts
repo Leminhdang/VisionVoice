@@ -42,6 +42,32 @@ export const TFLITE_DELEGATES: TensorflowModelDelegate[] =
     default: [],
   });
 
+/**
+ * Model được chép ra thư mục documents (KHÔNG phải cache) rồi nạp từ đó.
+ *
+ * `Asset.downloadAsync()` chỉ ghi vào cacheDirectory — thư mục mà tài liệu của
+ * chính expo-asset ghi là hệ điều hành được phép xoá bất cứ lúc nào. Mất bản
+ * cache nghĩa là bản dev phải kéo lại 4,5 MB từ Metro, tức là chế độ dò vật
+ * cản chết khi không có mạng. Documents không bị dọn tự động.
+ *
+ * Tên file mang số phiên bản: đổi file .tflite trong assets/ thì tăng số này,
+ * bản cũ trên máy người dùng tự khắc bị bỏ thay vì bị nạp nhầm.
+ */
+export const OBSTACLE_MODEL_DIR_NAME = 'models';
+export const OBSTACLE_MODEL_FILE_NAME = 'efficientdet_lite0_detection.v1.tflite';
+/**
+ * Kích thước đúng của assets/models/efficientdet_lite0_detection.tflite.
+ * Bắt bản chép dở (app bị kill giữa lúc chép) — rẻ hơn hẳn băm MD5 4,5 MB mỗi
+ * lần mở app. Phải sửa cùng lúc khi đổi model.
+ */
+export const OBSTACLE_MODEL_SIZE_BYTES = 4_563_519;
+/**
+ * Chờ bấy nhiêu trước khi báo "đang chuẩn bị". Đường ấm (model đã nạp sẵn lúc
+ * mở app) chuyển sang 'loaded' trong vài microtask nên timer bị huỷ trước khi
+ * kịp chạy — không nghe câu thừa ở mỗi lần vào chế độ.
+ */
+export const OBSTACLE_MODEL_NOTICE_DELAY_MS = 600;
+
 export const OBSTACLE_SCORE_MIN = 0.35;
 export const DANGER_AREA_RATIO = 0.35;
 export const WARNING_AREA_RATIO = 0.18;

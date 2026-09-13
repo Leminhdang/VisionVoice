@@ -75,6 +75,9 @@ export default function HomeCameraScreen({
   const photoOutputRef = useRef<CameraPhotoOutput | null>(null);
   const [lastImage, setLastImage] = useState<PreparedImage | null>(null);
   const [lastDescription, setLastDescription] = useState<string | null>(null);
+  // Ảnh vừa chụp, giữ riêng khỏi lastImage để lần phân tích hỏng KHÔNG xoá mất
+  // kết quả cũ người dùng đang có.
+  const [pendingImage, setPendingImage] = useState<PreparedImage | null>(null);
 
   const hasResult =
     lastImage !== null && lastDescription !== null && phase === "idle";
@@ -107,6 +110,11 @@ export default function HomeCameraScreen({
         const message =
           err instanceof GeminiError ? ERRORS[err.kind] : ERRORS.unknown;
         void audioSession.speakExclusive(message);
+      } finally {
+        // Buông ảnh đóng băng ở cả hai đường. Đường thành công đã bật hasResult
+        // trong cùng một khối đồng bộ phía trên nên nhánh kết quả đã chiếm màn
+        // hình trước — không nháy về camera.
+        setPendingImage(null);
       }
     },
     [dispatch],
@@ -130,6 +138,7 @@ export default function HomeCameraScreen({
       dispatch("CAPTURE_START");
       try {
         const image = await captureAndPrepare(output);
+        setPendingImage(image);
         await analyzeAndSpeak(image, captureId);
       } catch (err) {
         console.warn("Lỗi khi chụp ảnh:", err);
@@ -199,6 +208,7 @@ export default function HomeCameraScreen({
     dispatch("CAPTURE_START");
     try {
       const image = await prepareFromUri(pickedUri);
+      setPendingImage(image);
       await analyzeAndSpeak(image, captureId);
     } catch (err) {
       console.warn("Lỗi khi xử lý ảnh từ thư viện:", err);
@@ -326,6 +336,26 @@ export default function HomeCameraScreen({
             accessibilityLabel={HOME.READ_AGAIN}
           />
         </View>
+      </View>
+    );
+  }
+
+  // Chụp xong là đóng băng khung hình: hiện luôn ảnh vừa chụp thay cho camera
+  // sống, chỉ có spinner. Text mô tả đợi phân tích xong mới hiện ở nhánh
+  // hasResult bên trên. Nhánh này không render CameraViewport nên camera tắt
+  // hẳn trong lúc chờ Gemini — cùng vòng đời mà nhánh kết quả vẫn đang dùng.
+  if (pendingImage !== null) {
+    return (
+      <View
+        style={[
+          styles.resultContainer,
+          {
+            paddingTop: insets.top + spacing.md,
+            paddingBottom: insets.bottom + spacing.md,
+          },
+        ]}
+      >
+        <CaptionPanel imageUri={pendingImage.uri} caption="" isLoading />
       </View>
     );
   }

@@ -109,6 +109,10 @@ export const OBSTACLE = {
   LABEL_VI: COCO_LABEL_VI,
   DETECTOR_FAILED:
     'Không dò được vật cản. Chế độ dò đã dừng, vui lòng quay lại và thử lại.',
+  PREPARING: 'Đang chuẩn bị chế độ dò vật cản, vui lòng chờ trong giây lát.',
+  MODEL_NO_LOCAL_URI: 'Không lấy được đường dẫn cục bộ của model vật cản.',
+  MODEL_COPY_INVALID: (size: number) =>
+    `Bản chép model vật cản bị hỏng (${size} byte).`,
 };
 
 export const ERRORS = {
