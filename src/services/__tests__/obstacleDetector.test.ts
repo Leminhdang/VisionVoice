@@ -1,5 +1,6 @@
 import {
   OBSTACLE_CONFIRM_FRAMES,
+  OBSTACLE_LABEL_SCORE_MIN,
   OBSTACLE_MIN_BOTTOM_RATIO,
 } from '../../constants/config';
 import {
@@ -195,6 +196,37 @@ describe('assessDetections', () => {
     expect(result.severity).toBe('danger');
   });
 
+  test('không gọi tên vật khi độ tin dưới ngưỡng đặt tên', () => {
+    // Arrange: tái hiện đúng ca đo được trên máy — 'tàu hỏa' ở 0,543 giữa
+    // phòng làm việc. Vẫn phải cảnh báo, nhưng không được đọc tên ra.
+    const objects = [
+      makeObject(15, 20, 70, 50, [{ text: 'train', confidence: 0.543 }]),
+    ];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'medium');
+
+    // Assert
+    expect(result.severity).toBe('danger');
+    expect(result.label).toBeNull();
+  });
+
+  test('gọi tên vật khi độ tin đạt đúng ngưỡng đặt tên', () => {
+    // Arrange
+    const objects = [
+      makeObject(15, 20, 70, 50, [
+        { text: 'tv', confidence: OBSTACLE_LABEL_SCORE_MIN },
+      ]),
+    ];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'medium');
+
+    // Assert
+    expect(result.severity).toBe('danger');
+    expect(result.label).toBe('tivi');
+  });
+
   test('returns null label for a label text missing from OBSTACLE.LABEL_VI', () => {
     // Arrange: 'unicorn' has no COCO/Vietnamese mapping
     const objects = [makeObject(15, 20, 70, 50, [{ text: 'unicorn', confidence: 0.9 }])];
@@ -301,11 +333,11 @@ describe('createAnnouncementPolicy', () => {
     const policy = createAnnouncementPolicy();
     warmStreak(policy, makeAssessment('danger', 'ghế', 0.4));
     policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
-    warmStreak(policy, makeAssessment('safe'), 50);
+    warmStreak(policy, makeAssessment('safe'), 1600);
 
-    // Act
-    const onTransition = policy.shouldAnnounce(makeAssessment('safe'), 100);
-    const repeated = policy.shouldAnnounce(makeAssessment('safe'), 200);
+    // Act: 1600 ms đủ qua khoảng cách chung giữa hai lần nói.
+    const onTransition = policy.shouldAnnounce(makeAssessment('safe'), 1600);
+    const repeated = policy.shouldAnnounce(makeAssessment('safe'), 1700);
 
     // Assert
     expect(onTransition).toBe(true);
@@ -364,17 +396,60 @@ describe('createAnnouncementPolicy', () => {
     expect(flicker).toBe(false);
   });
 
+  test('tụt mức danger xuống warning không được chen ngang câu vừa nói', () => {
+    // Arrange: đúng chuỗi đo được trên máy — danger rồi warning chỉ 691 ms sau,
+    // cắt ngang câu cảnh báo đang đọc dở.
+    const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('danger', 'tivi', 0.4));
+    policy.shouldAnnounce(makeAssessment('danger', 'tivi', 0.4), 0);
+
+    // Act
+    const downgrade = policy.shouldAnnounce(makeAssessment('warning', 'ô tô', 0.2), 691);
+
+    // Assert
+    expect(downgrade).toBe(false);
+  });
+
+  test('chặn tụt mức cắt luôn cả chuỗi dao động phía sau', () => {
+    // Arrange: danger(0) → warning(691) → danger(1398) là chuỗi thật trong log.
+    // Chặn câu warning giữ lastSeverity ở 'danger', nên lần danger sau không
+    // còn là leo thang và rơi vào cooldown 2000 ms của chính nó.
+    const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('danger', 'tivi', 0.4));
+    policy.shouldAnnounce(makeAssessment('danger', 'tivi', 0.4), 0);
+    policy.shouldAnnounce(makeAssessment('warning', 'ô tô', 0.2), 691);
+
+    // Act
+    const reDanger = policy.shouldAnnounce(makeAssessment('danger', null, 0.4), 1398);
+
+    // Assert
+    expect(reDanger).toBe(false);
+  });
+
+  test('leo thang lên danger vẫn được cắt ngang, dù chưa đủ khoảng cách chung', () => {
+    // Arrange: đây là ngoại lệ an toàn — sắp đâm vào vật thì phải nói ngay.
+    const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('warning', 'ghế', 0.2));
+    policy.shouldAnnounce(makeAssessment('warning', 'ghế', 0.2), 0);
+
+    // Act
+    const escalation = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 732);
+
+    // Assert
+    expect(escalation).toBe(true);
+  });
+
   test('re-escalation to danger after safe bypasses the danger cooldown', () => {
     // Arrange: danger announced at t=0, safe at t=100, danger again at t=200
     const policy = createAnnouncementPolicy();
     warmStreak(policy, makeAssessment('danger', 'ghế', 0.4));
     policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
-    warmStreak(policy, makeAssessment('safe'), 50);
-    policy.shouldAnnounce(makeAssessment('safe'), 100);
-    warmStreak(policy, makeAssessment('danger', 'ghế', 0.4), 150);
+    warmStreak(policy, makeAssessment('safe'), 1600);
+    policy.shouldAnnounce(makeAssessment('safe'), 1600);
+    warmStreak(policy, makeAssessment('danger', 'ghế', 0.4), 1700);
 
     // Act
-    const result = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 200);
+    const result = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 1700);
 
     // Assert
     expect(result).toBe(true);

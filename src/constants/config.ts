@@ -115,6 +115,20 @@ export const OBSTACLE_MODEL_NOTICE_DELAY_MS = 600;
 
 export const OBSTACLE_SCORE_MIN = 0.35;
 /**
+ * Ngưỡng riêng để được phép GỌI TÊN vật, tách khỏi ngưỡng để tính là vật cản.
+ *
+ * Đo trên máy thật, hai nhóm tách bạch rất rõ: nhãn đúng ('tivi', 'bàn phím')
+ * nằm ở 0,67–0,83, còn nhãn bịa ('ô tô', 'tàu hỏa' giữa phòng làm việc) nằm ở
+ * 0,50 và 0,54. Model không sai chỗ "có vật hay không" — nó chỉ đoán bừa TÊN
+ * khi độ tin thấp.
+ *
+ * Nên tách làm hai việc: vượt OBSTACLE_SCORE_MIN thì vẫn cảnh báo là có vật
+ * cản (giữ nguyên mức an toàn, thà báo thừa còn hơn im lặng), nhưng chỉ vượt
+ * ngưỡng này mới được đọc tên ra. Dưới ngưỡng thì nói trống "Vật cản phía
+ * trước." — vừa không bịa, vừa không mất cảnh báo.
+ */
+export const OBSTACLE_LABEL_SCORE_MIN = 0.6;
+/**
  * Cạnh ĐÁY của bbox phải nằm dưới mốc này (tỉ lệ theo chiều cao khung) thì vật
  * mới được tính là nằm trên đường đi.
  *
@@ -150,6 +164,19 @@ export const CENTER_BAND_WIDTH_RATIO: Record<'low' | 'medium' | 'high', number> 
   medium: 0.4,
   high: 0.5,
 };
+/**
+ * Khoảng cách tối thiểu giữa HAI LẦN NÓI bất kỳ, bất kể mức nào.
+ *
+ * ANNOUNCE_COOLDOWN_MS đếm riêng từng mức, nên severity dao động sẽ luồn qua cả
+ * hai: đo được chuỗi danger → warning → danger chỉ trong 1,4 giây, mỗi câu cắt
+ * ngang câu trước (speakExclusive mặc định flush) nên người dùng chỉ nghe được
+ * mấy mảnh vụn.
+ *
+ * Chặn này áp cho câu "đường trống" và câu cảnh báo mức warning. LEO THANG LÊN
+ * DANGER ĐƯỢC MIỄN — sắp đâm vào vật thì cắt ngang câu đang nói để hét "Dừng
+ * lại!" mới đúng.
+ */
+export const OBSTACLE_MIN_ANNOUNCE_GAP_MS = 1500;
 export const ANNOUNCE_COOLDOWN_MS = {
   danger: 2000,
   warning: 3000,

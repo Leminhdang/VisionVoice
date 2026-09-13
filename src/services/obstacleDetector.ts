@@ -6,6 +6,8 @@ import {
   CENTER_BAND_WIDTH_RATIO,
   DANGER_AREA_RATIO,
   OBSTACLE_CONFIRM_FRAMES,
+  OBSTACLE_LABEL_SCORE_MIN,
+  OBSTACLE_MIN_ANNOUNCE_GAP_MS,
   OBSTACLE_MIN_BOTTOM_RATIO,
   OBSTACLE_SCORE_MIN,
   WARNING_AREA_RATIO,
@@ -70,6 +72,13 @@ function getObjectScore(object: DetectedObject): number {
   );
 }
 
+/**
+ * Tên tiếng Việt của vật, hoặc null khi không đủ tin để gọi tên.
+ *
+ * Độ tin thấp thì model đoán bừa tên chứ không sai chỗ "có vật hay không" — xem
+ * OBSTACLE_LABEL_SCORE_MIN. Trả null làm người gọi đọc câu trống thay vì bịa ra
+ * "tàu hỏa" giữa phòng làm việc; cảnh báo vẫn còn nguyên.
+ */
 function getBestLabelVi(object: DetectedObject): string | null {
   if (object.labels.length === 0) {
     return null;
@@ -77,6 +86,9 @@ function getBestLabelVi(object: DetectedObject): string | null {
   const best = object.labels.reduce((top, label) =>
     label.confidence > top.confidence ? label : top,
   );
+  if (best.confidence < OBSTACLE_LABEL_SCORE_MIN) {
+    return null;
+  }
   const key = best.text.trim().toLowerCase();
   return OBSTACLE.LABEL_VI[key] ?? null;
 }
@@ -176,6 +188,9 @@ export function assessDetections(
  * - Escalation TO danger (previous severity !== danger) bypasses the cooldown —
  *   once per transition; while danger persists the danger cooldown applies.
  * - `safe` announces only on the transition into safe, then stays silent.
+ * - KHOẢNG CÁCH CHUNG: hai lần nói bất kỳ phải cách nhau
+ *   OBSTACLE_MIN_ANNOUNCE_GAP_MS, vì cooldown riêng từng mức không chặn được
+ *   severity dao động — leo thang lên danger là ngoại lệ duy nhất.
  * - An identical (severity, label) repeat within its cooldown is suppressed;
  *   after the cooldown it re-announces (a persisting obstacle is re-warned).
  *
@@ -198,6 +213,7 @@ export function createAnnouncementPolicy(): AnnouncementPolicy {
   let lastWarningAt = Number.NEGATIVE_INFINITY;
   let hazardStreak = 0;
   let safeStreak = 0;
+  let lastAnnounceAt = Number.NEGATIVE_INFINITY;
 
   return {
     shouldAnnounce(assessment: Assessment, now: number): boolean {
@@ -212,7 +228,11 @@ export function createAnnouncementPolicy(): AnnouncementPolicy {
         if (lastSeverity === 'safe') {
           return false;
         }
+        if (now - lastAnnounceAt < OBSTACLE_MIN_ANNOUNCE_GAP_MS) {
+          return false;
+        }
         lastSeverity = 'safe';
+        lastAnnounceAt = now;
         return true;
       }
 
@@ -223,6 +243,8 @@ export function createAnnouncementPolicy(): AnnouncementPolicy {
       }
 
       if (severity === 'danger') {
+        // Leo thang lên danger được miễn cả cooldown lẫn khoảng cách tối thiểu:
+        // sắp đâm vào vật thì cắt ngang câu đang nói mới đúng.
         const isEscalation = lastSeverity !== 'danger';
         const isCooldownOver = now - lastDangerAt >= ANNOUNCE_COOLDOWN_MS.danger;
         if (!isEscalation && !isCooldownOver) {
@@ -230,16 +252,23 @@ export function createAnnouncementPolicy(): AnnouncementPolicy {
         }
         lastSeverity = 'danger';
         lastDangerAt = now;
+        lastAnnounceAt = now;
         return true;
       }
 
-      // warning
+      // warning — phải qua CẢ cooldown riêng của mức lẫn khoảng cách chung.
+      // Thiếu vế sau thì một lần tụt mức danger → warning sẽ chen ngay vào giữa
+      // câu cảnh báo nguy hiểm vừa nói, rồi kéo theo cả chuỗi cắt xén.
       const isCooldownOver = now - lastWarningAt >= ANNOUNCE_COOLDOWN_MS.warning;
       if (!isCooldownOver) {
         return false;
       }
+      if (now - lastAnnounceAt < OBSTACLE_MIN_ANNOUNCE_GAP_MS) {
+        return false;
+      }
       lastSeverity = 'warning';
       lastWarningAt = now;
+      lastAnnounceAt = now;
       return true;
     },
   };
