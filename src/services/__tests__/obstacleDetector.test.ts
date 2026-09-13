@@ -240,6 +240,120 @@ describe('assessDetections', () => {
   });
 });
 
+describe('trễ trạng thái mức cảnh báo', () => {
+  /** Diện tích ngay dưới ngưỡng danger — chỗ mức từng nhảy qua lại. */
+  const JUST_BELOW_DANGER = 60; // 60×57 = 0.342 < 0.35
+
+  test('vào mức danger vẫn cần vượt đủ ngưỡng gốc', () => {
+    // Arrange: từ 'safe', diện tích 0,342 chưa đủ 0,35.
+    const objects = [
+      makeObject(20, 30, JUST_BELOW_DANGER, 57, [{ text: 'tv', confidence: 0.9 }]),
+    ];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'medium', 'safe');
+
+    // Assert
+    expect(result.severity).toBe('warning');
+  });
+
+  test('đã ở danger thì cùng diện tích đó vẫn giữ nguyên danger', () => {
+    // Arrange: y hệt khung trên, chỉ khác mức của khung trước. Đây chính là ca
+    // đo được trên máy — camera đứng yên, diện tích rung quanh ngưỡng, mức nhảy
+    // warning ↔ danger liên tục.
+    const objects = [
+      makeObject(20, 30, JUST_BELOW_DANGER, 57, [{ text: 'tv', confidence: 0.9 }]),
+    ];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'medium', 'danger');
+
+    // Assert
+    expect(result.severity).toBe('danger');
+  });
+
+  test('tụt hẳn dưới ngưỡng trễ thì mới rời mức danger', () => {
+    // Arrange: 60×40 = 0,24 — dưới cả 0,35 × 0,85 = 0,2975.
+    const objects = [makeObject(20, 30, 60, 40, [{ text: 'tv', confidence: 0.9 }])];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'medium', 'danger');
+
+    // Assert
+    expect(result.severity).toBe('warning');
+  });
+});
+
+describe('trễ trạng thái + chính sách thông báo, chạy chung', () => {
+  /**
+   * Dựng lại đúng thứ nghe thấy trên máy: camera GIỮ NGUYÊN hướng vào một vật,
+   * diện tích bbox rung nhẹ quanh ngưỡng danger, app đổi giọng liên tục.
+   *
+   * Mốc thời gian lấy thẳng từ log (run 2), quy về gốc tại khung f6:
+   * f6 danger(0) … f9 warning(2176) → f10 danger(2889). Hai lần cuối chỉ cách
+   * nhau 713 ms nên câu sau cắt cụt câu trước.
+   *
+   * Gọi shouldAnnounce đúng MỘT lần mỗi khung, như vòng quét thật — không mồi
+   * bằng warmStreak, vì giữa chuỗi thì lần mồi lại tiêu mất chính lần thông báo
+   * cần đo.
+   */
+  const FRAMES: { at: number; wide: boolean }[] = [
+    { at: -737, wide: true },
+    { at: 0, wide: true },
+    { at: 737, wide: true },
+    { at: 1465, wide: true },
+    { at: 2176, wide: false }, // diện tích rung xuống dưới ngưỡng một chút
+    { at: 2889, wide: true },
+  ];
+
+  /** 70×52 = 0,364 (trên ngưỡng 0,35) và 70×49 = 0,343 (ngay dưới). */
+  const heightFor = (wide: boolean): number => (wide ? 52 : 49);
+
+  function runSequence(useHysteresis: boolean): string[] {
+    const policy = createAnnouncementPolicy();
+    let previous: Assessment['severity'] = 'safe';
+    const spoken: string[] = [];
+
+    for (const frame of FRAMES) {
+      const objects = [
+        makeObject(15, 20, 70, heightFor(frame.wide), [
+          { text: 'tv', confidence: 0.9 },
+        ]),
+      ];
+      const result = assessDetections(
+        objects,
+        FRAME,
+        'medium',
+        useHysteresis ? previous : 'safe',
+      );
+      previous = result.severity;
+      if (policy.shouldAnnounce(result, frame.at)) {
+        spoken.push(result.severity);
+      }
+    }
+
+    return spoken;
+  }
+
+  test('không có trễ trạng thái thì mức nhảy và câu sau cắt câu trước', () => {
+    // Act: ép previous = 'safe' mỗi khung = hành vi trước khi sửa.
+    const spoken = runSequence(false);
+
+    // Assert: đúng chuỗi danger → warning → danger đã đo được trên máy.
+    expect(spoken).toEqual(['danger', 'warning', 'danger']);
+  });
+
+  test('có trễ trạng thái thì không còn câu tụt mức chen ngang', () => {
+    // Act
+    const spoken = runSequence(true);
+
+    // Assert: khung rung giữ nguyên danger nên không sinh câu 'warning'; vật
+    // vẫn còn đó nên được nhắc lại sau cooldown, và lần danger 713 ms sau đó bị
+    // chặn. Nhắc lại vật cản dai dẳng là CỐ Ý, khác hẳn với nhảy mức.
+    expect(spoken).toEqual(['danger', 'danger']);
+  });
+});
+
 describe('createAnnouncementPolicy', () => {
   test('announces on the first transition into warning', () => {
     // Arrange
@@ -439,19 +553,36 @@ describe('createAnnouncementPolicy', () => {
     expect(escalation).toBe(true);
   });
 
-  test('re-escalation to danger after safe bypasses the danger cooldown', () => {
-    // Arrange: danger announced at t=0, safe at t=100, danger again at t=200
+  test('danger sau khi đã trống vẫn phải chờ hết cooldown của chính nó', () => {
+    // Arrange: danger(0) → safe(1600) → danger(1700). Trước đây lần danger sau
+    // được miễn cooldown vì tính là "leo thang". Ngoại lệ đó bị bỏ: nó chỉ thực
+    // sự cho qua các lần leo thang GIẢ do mức nhảy qua lại, mà lần danger đầu
+    // tiên thì đã qua cooldown sẵn nên chẳng cần tới nó.
     const policy = createAnnouncementPolicy();
     warmStreak(policy, makeAssessment('danger', 'ghế', 0.4));
     policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
     warmStreak(policy, makeAssessment('safe'), 1600);
     policy.shouldAnnounce(makeAssessment('safe'), 1600);
-    warmStreak(policy, makeAssessment('danger', 'ghế', 0.4), 1700);
 
     // Act
-    const result = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 1700);
+    const withinCooldown = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 1700);
+    const afterCooldown = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 2100);
 
     // Assert
-    expect(result).toBe(true);
+    expect(withinCooldown).toBe(false);
+    expect(afterCooldown).toBe(true);
+  });
+
+  test('lần danger đầu tiên luôn được nói ngay, không phải chờ gì', () => {
+    // Arrange: đây là ca mà ngoại lệ "leo thang" từng phục vụ — phải vẫn chạy.
+    const policy = createAnnouncementPolicy();
+    warmStreak(policy, makeAssessment('warning', 'ghế', 0.2));
+    policy.shouldAnnounce(makeAssessment('warning', 'ghế', 0.2), 0);
+
+    // Act: warning vừa nói xong 300 ms trước, chưa qua khoảng cách chung.
+    const firstDanger = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 300);
+
+    // Assert
+    expect(firstDanger).toBe(true);
   });
 });

@@ -42,6 +42,9 @@ export type MetricEvent =
       detections: number;
       /** Điểm cao nhất trước khi lọc ngưỡng — xem readTopScore(). */
       topScore: number;
+      /** Diện tích bbox thắng cuộc / diện tích khung — nguồn ra severity. */
+      areaRatio: number;
+      severity: 'safe' | 'warning' | 'danger';
     }
   // Khung không dò được (model chưa nạp / lỗi inference). Tách khỏi
   // obstacle_frame để số liệu detections không bị pha tạp.

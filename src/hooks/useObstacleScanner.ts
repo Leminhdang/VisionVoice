@@ -17,7 +17,11 @@ import {
   assessDetections,
   createAnnouncementPolicy,
 } from '../services/obstacleDetector';
-import type { AnnouncementPolicy, Assessment } from '../services/obstacleDetector';
+import type {
+  AnnouncementPolicy,
+  Assessment,
+  Severity,
+} from '../services/obstacleDetector';
 import { loadObstacleModel } from '../services/obstacleModel';
 import { parseDetections, readTopScore } from '../services/tfliteDetector';
 import { useSettings } from '../state/SettingsContext';
@@ -118,6 +122,10 @@ export function useObstacleScanner(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCyclingRef = useRef(false);
   const failureCountRef = useRef(0);
+  // Mức của khung trước, cấp cho trễ trạng thái trong assessDetections. Dùng ref
+  // chứ không dùng state `assessment`: effect vòng quét chỉ phụ thuộc [active]
+  // nên closure của nó giữ mãi giá trị state của lần chạy đầu.
+  const lastSeverityRef = useRef<Severity>('safe');
   const sensitivityRef = useRef(settings.obstacleSensitivity);
 
   useEffect(() => {
@@ -195,6 +203,7 @@ export function useObstacleScanner(
 
     policyRef.current = createAnnouncementPolicy();
     setAssessment(null);
+    lastSeverityRef.current = 'safe';
     isCyclingRef.current = true;
     failureCountRef.current = 0;
 
@@ -253,9 +262,19 @@ export function useObstacleScanner(
         const objects = parseDetections(outputs, photo.width, photo.height);
         failureCountRef.current = 0;
 
+        const result = assessDetections(
+          objects,
+          { width: photo.width, height: photo.height },
+          sensitivityRef.current,
+          lastSeverityRef.current,
+        );
+        lastSeverityRef.current = result.severity;
+        setAssessment(result);
+
         // Tách từng chặng: 557 ms/khung đo được không cho biết nghẽn ở chụp,
         // decode, tiền xử lý hay suy luận — mà bốn chỗ đó cần bốn cách sửa
-        // hoàn toàn khác nhau.
+        // hoàn toàn khác nhau. areaRatio + severity đi kèm để lần sau đo được
+        // mức có còn nhảy qua lại hay không, thay vì phải suy từ topScore.
         logMetric({
           event: 'obstacle_frame',
           frameId,
@@ -266,14 +285,9 @@ export function useObstacleScanner(
           inferMs: inferredAt - preparedAt,
           detections: objects.length,
           topScore: Number(readTopScore(outputs).toFixed(3)),
+          areaRatio: Number(result.areaRatio.toFixed(3)),
+          severity: result.severity,
         });
-
-        const result = assessDetections(
-          objects,
-          { width: photo.width, height: photo.height },
-          sensitivityRef.current,
-        );
-        setAssessment(result);
 
         const shouldAnnounce =
           policyRef.current?.shouldAnnounce(result, Date.now()) ?? false;

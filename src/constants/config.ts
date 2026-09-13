@@ -158,6 +158,20 @@ export const OBSTACLE_MIN_BOTTOM_RATIO = 0.45;
  */
 export const OBSTACLE_CONFIRM_FRAMES = 2;
 export const DANGER_AREA_RATIO = 0.35;
+/**
+ * Hệ số trễ trạng thái (hysteresis): đã ở mức nào rồi thì phải tụt xuống dưới
+ * ngưỡng × hệ số này mới được rời mức đó.
+ *
+ * Đo trên máy thật, camera GIỮ NGUYÊN hướng vào một vật: diện tích bbox rung
+ * quanh ngưỡng nên mức cảnh báo nhảy warning ↔ danger liên tục — 6/9 lần cảnh
+ * báo trong một phiên là đổi mức, chứ không phải vật thay đổi. Vật đứng yên mà
+ * app đổi giọng liên tục thì người khiếm thị không tài nào hiểu được chuyện gì
+ * đang xảy ra.
+ *
+ * Vào mức thì cần vượt đủ ngưỡng, ra khỏi mức thì cần tụt hẳn — đúng cách bộ
+ * điều nhiệt tránh bật/tắt liên hồi quanh nhiệt độ đặt.
+ */
+export const OBSTACLE_SEVERITY_HYSTERESIS = 0.85;
 export const WARNING_AREA_RATIO = 0.18;
 export const CENTER_BAND_WIDTH_RATIO: Record<'low' | 'medium' | 'high', number> = {
   low: 0.25,

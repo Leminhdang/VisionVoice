@@ -10,6 +10,7 @@ import {
   OBSTACLE_MIN_ANNOUNCE_GAP_MS,
   OBSTACLE_MIN_BOTTOM_RATIO,
   OBSTACLE_SCORE_MIN,
+  OBSTACLE_SEVERITY_HYSTERESIS,
   WARNING_AREA_RATIO,
 } from '../constants/config';
 import { OBSTACLE } from '../constants/strings';
@@ -117,11 +118,26 @@ function isOnWalkingPath(object: DetectedObject, frameHeight: number): boolean {
   return bottom / frameHeight >= OBSTACLE_MIN_BOTTOM_RATIO;
 }
 
-function toSeverity(areaRatio: number): Severity {
-  if (areaRatio >= DANGER_AREA_RATIO) {
+/**
+ * Diện tích tương đối → mức cảnh báo, có trễ trạng thái.
+ *
+ * `previous` là mức của KHUNG TRƯỚC. Đang ở mức nào thì ngưỡng giữ mức đó được
+ * hạ xuống OBSTACLE_SEVERITY_HYSTERESIS lần, nên diện tích rung quanh ngưỡng
+ * không còn làm mức nhảy qua lại. Vào mức vẫn cần vượt đủ ngưỡng gốc.
+ */
+function toSeverity(areaRatio: number, previous: Severity): Severity {
+  const dangerFloor =
+    previous === 'danger'
+      ? DANGER_AREA_RATIO * OBSTACLE_SEVERITY_HYSTERESIS
+      : DANGER_AREA_RATIO;
+  if (areaRatio >= dangerFloor) {
     return 'danger';
   }
-  if (areaRatio >= WARNING_AREA_RATIO) {
+  const warningFloor =
+    previous === 'safe'
+      ? WARNING_AREA_RATIO
+      : WARNING_AREA_RATIO * OBSTACLE_SEVERITY_HYSTERESIS;
+  if (areaRatio >= warningFloor) {
     return 'warning';
   }
   return 'safe';
@@ -132,7 +148,8 @@ function toSeverity(areaRatio: number): Severity {
  * (2) have their bbox center-x inside the central band whose width is
  * CENTER_BAND_WIDTH_RATIO[sensitivity] * frame.width, and (3) have their bbox
  * BOTTOM edge at or below OBSTACLE_MIN_BOTTOM_RATIO of the frame height —
- * see isOnWalkingPath(). Severity comes from the
+ * see isOnWalkingPath(). `previousSeverity` là mức của khung trước, dùng cho
+ * trễ trạng thái trong toSeverity(). Severity comes from the
  * bbox-to-frame area ratio; the highest severity wins (ties broken by larger
  * area). `safe` assessments always carry a null label — the safe phrase never
  * names an object. Labels are mapped through OBSTACLE.LABEL_VI; unknown → null.
@@ -141,6 +158,7 @@ export function assessDetections(
   objects: readonly DetectedObject[],
   frame: FrameSize,
   sensitivity: ObstacleSensitivity,
+  previousSeverity: Severity = 'safe',
 ): Assessment {
   if (frame.width <= 0 || frame.height <= 0) {
     return SAFE_ASSESSMENT;
@@ -161,7 +179,7 @@ export function assessDetections(
     }
 
     const areaRatio = (object.frame.size.x * object.frame.size.y) / frameArea;
-    const severity = toSeverity(areaRatio);
+    const severity = toSeverity(areaRatio, previousSeverity);
     const isMoreSevere = SEVERITY_RANK[severity] > SEVERITY_RANK[best.severity];
     const isLargerAtSameSeverity =
       severity === best.severity && areaRatio > best.areaRatio;
@@ -185,12 +203,12 @@ export function assessDetections(
  * - A transition (different severity, or different label at the same severity)
  *   announces, but respects the per-severity cooldown (danger 2000 ms,
  *   warning 3000 ms since that severity was last announced).
- * - Escalation TO danger (previous severity !== danger) bypasses the cooldown —
- *   once per transition; while danger persists the danger cooldown applies.
+ * - Mức danger chỉ chịu cooldown của chính nó. Lần danger đầu tiên đi qua ngay
+ *   vì chưa từng nói danger; các lần sau phải chờ đủ ANNOUNCE_COOLDOWN_MS.danger.
  * - `safe` announces only on the transition into safe, then stays silent.
  * - KHOẢNG CÁCH CHUNG: hai lần nói bất kỳ phải cách nhau
  *   OBSTACLE_MIN_ANNOUNCE_GAP_MS, vì cooldown riêng từng mức không chặn được
- *   severity dao động — leo thang lên danger là ngoại lệ duy nhất.
+ *   severity dao động.
  * - An identical (severity, label) repeat within its cooldown is suppressed;
  *   after the cooldown it re-announces (a persisting obstacle is re-warned).
  *
@@ -243,11 +261,16 @@ export function createAnnouncementPolicy(): AnnouncementPolicy {
       }
 
       if (severity === 'danger') {
-        // Leo thang lên danger được miễn cả cooldown lẫn khoảng cách tối thiểu:
-        // sắp đâm vào vật thì cắt ngang câu đang nói mới đúng.
-        const isEscalation = lastSeverity !== 'danger';
+        // Chỉ còn cooldown của chính mức danger quyết định.
+        //
+        // Trước đây "leo thang lên danger" được miễn cooldown. Ý định đúng —
+        // sắp đâm vào vật thì phải nói ngay — nhưng thừa: lần danger ĐẦU TIÊN
+        // luôn có lastDangerAt = -∞ nên đã qua cooldown sẵn, chẳng cần miễn.
+        // Thứ duy nhất mà ngoại lệ đó thực sự cho qua là các lần leo thang GIẢ
+        // do mức nhảy qua lại, và đo được nó cắt ngang câu đang đọc sau 713 ms.
+        // Nếu 2 giây trước vừa hô "Dừng lại!" thì người dùng đã biết rồi.
         const isCooldownOver = now - lastDangerAt >= ANNOUNCE_COOLDOWN_MS.danger;
-        if (!isEscalation && !isCooldownOver) {
+        if (!isCooldownOver) {
           return false;
         }
         lastSeverity = 'danger';
