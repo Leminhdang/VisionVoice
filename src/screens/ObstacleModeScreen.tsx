@@ -35,7 +35,7 @@ export default function ObstacleModeScreen({
 
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const { assessment, setPhotoOutput } = useObstacleScanner({
+  const { assessment, setPhotoOutput, frameOutput } = useObstacleScanner({
     active: isFocused,
   });
   const severity = assessment?.severity ?? "safe";
@@ -70,6 +70,7 @@ export default function ObstacleModeScreen({
         onPhotoOutputReady={handlePhotoOutputReady}
         onPhotoOutputLost={handlePhotoOutputLost}
         targetResolution={OBSTACLE_CAPTURE_RESOLUTION}
+        extraOutput={frameOutput}
       />
       <View pointerEvents="none" style={styles.scrim} />
       <SeverityBanner severity={severity} objectLabel={assessment?.label} />

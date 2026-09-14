@@ -26,6 +26,29 @@ export const TARGET_PICTURE_SIZE = 1280;
  */
 export const OBSTACLE_TARGET_PERIOD_MS = 700;
 /**
+ * Bật luồng frame output của VisionCamera, song song với vòng capturePhoto.
+ *
+ * Đo trên máy: capturePhoto chiếm 497/553 ms mỗi khung (90%), còn model chỉ
+ * 28 ms. Nghẽn nằm ở đường CHỤP ẢNH TĨNH — 3A hội tụ, nén JPEG, decode lại —
+ * chứ không ở suy luận. Frame output lấy pixel thẳng từ pipeline camera, bỏ hết
+ * chuỗi đó.
+ *
+ * Lần trước đã thử hướng này và `onFrame` KHÔNG BAO GIỜ NỔ (xem memory/handoff),
+ * nhiều khả năng do Metro chưa reset cache sau khi thêm babel plugin worklets.
+ * Nên đây mới chỉ là BƯỚC DÒ: chỉ ghi log kích thước/định dạng khung, chưa đụng
+ * vào vòng quét thật. Xác nhận nổ rồi mới chuyển hẳn.
+ *
+ * Tắt cờ này nếu việc thêm output làm hỏng phiên camera trên máy nào đó.
+ */
+export const OBSTACLE_FRAME_PROBE_ENABLED = true;
+/**
+ * Độ phân giải mong muốn cho frame output. Chỉ là MỤC TIÊU — session sẽ ưu tiên
+ * giữ tỉ lệ khung hình hơn là khớp đúng số pixel.
+ */
+export const OBSTACLE_FRAME_RESOLUTION = { width: 480, height: 640 };
+/** Giãn cách ghi log của bước dò, tính bên JS — worklet chạy ở tốc độ camera. */
+export const OBSTACLE_FRAME_PROBE_LOG_MS = 1000;
+/**
  * Khoảng nghỉ tối thiểu giữa hai khung khi xử lý đã lâu hơn nhịp mục tiêu.
  *
  * Không để 0: cần chừa chỗ cho JS thread chạy việc khác (chạm nút, TTS, điều

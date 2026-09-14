@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TensorflowPlugin } from 'react-native-fast-tflite';
-import type { CameraPhotoOutput } from 'react-native-vision-camera';
+import { useFrameOutput } from 'react-native-vision-camera';
+import type {
+  CameraFrameOutput,
+  CameraPhotoOutput,
+  Frame,
+} from 'react-native-vision-camera';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import {
+  OBSTACLE_FRAME_PROBE_ENABLED,
+  OBSTACLE_FRAME_PROBE_LOG_MS,
+  OBSTACLE_FRAME_RESOLUTION,
   OBSTACLE_MAX_DETECT_FAILURES,
   OBSTACLE_MIN_FRAME_GAP_MS,
   OBSTACLE_MODEL_NOTICE_DELAY_MS,
@@ -32,6 +41,13 @@ interface UseObstacleScannerOptions {
 
 interface UseObstacleScannerResult {
   assessment: Assessment | null;
+  /**
+   * Frame output cần gắn vào <Camera outputs>. null khi bước dò đang tắt.
+   *
+   * Màn hình phải chuyển tiếp giá trị này xuống CameraViewport — không gắn vào
+   * session thì output không nhận khung nào và `onFrame` không bao giờ nổ.
+   */
+  frameOutput: CameraFrameOutput | null;
 }
 
 /**
@@ -73,6 +89,43 @@ function useLocalTfliteModel(): TensorflowPlugin {
   }, []);
 
   return plugin;
+}
+
+/**
+ * Nhận báo cáo khung từ worklet và ghi log, có tiết chế.
+ *
+ * Worklet chạy ở tốc độ camera (~30 khung/giây) nên không ghi log trong đó.
+ * Toàn bộ phần quyết định nằm bên JS cho dễ sửa và dễ đọc — worklet chỉ đọc vài
+ * thuộc tính rồi chuyển sang.
+ */
+function createFrameProbeReporter(): (
+  width: number,
+  height: number,
+  pixelFormat: string,
+  bytes: number,
+  isPlanar: boolean,
+) => void {
+  let lastLoggedAt = 0;
+  let seen = 0;
+
+  return (width, height, pixelFormat, bytes, isPlanar) => {
+    seen++;
+    const now = Date.now();
+    if (now - lastLoggedAt < OBSTACLE_FRAME_PROBE_LOG_MS) {
+      return;
+    }
+    lastLoggedAt = now;
+    console.log(
+      `VVFRAME ${JSON.stringify({
+        seen,
+        width,
+        height,
+        pixelFormat,
+        bytes,
+        isPlanar,
+      })}`,
+    );
+  };
 }
 
 /**
@@ -135,6 +188,45 @@ export function useObstacleScanner(
   const setPhotoOutput = useCallback((output: CameraPhotoOutput | null) => {
     photoOutputRef.current = output;
   }, []);
+
+  /**
+   * BƯỚC DÒ frame output — chưa thay vòng quét, chỉ xác nhận đường này sống.
+   *
+   * Lần trước `onFrame` không bao giờ nổ nên cần bằng chứng trước khi viết lại
+   * vòng quét. Nếu log VVFRAME xuất hiện thì đường lấy pixel dùng được và bước
+   * sau mới bỏ capturePhoto (đang chiếm 90% thời gian mỗi khung).
+   *
+   * useFrameOutput phải được gọi VÔ ĐIỀU KIỆN — nó là hook, không thể bọc trong
+   * if. Cờ bật/tắt chỉ quyết định có gắn output vào session hay không.
+   */
+  const reportFrame = useRef(createFrameProbeReporter()).current;
+  const onProbeFrame = useCallback(
+    (frame: Frame) => {
+      'worklet';
+      try {
+        // Phải dispose trong finally: giữ khung lại làm nghẽn cả pipeline camera.
+        const buffer = frame.isPlanar ? null : frame.getPixelBuffer();
+        scheduleOnRN(
+          reportFrame,
+          frame.width,
+          frame.height,
+          String(frame.pixelFormat),
+          buffer?.byteLength ?? 0,
+          frame.isPlanar,
+        );
+      } finally {
+        frame.dispose();
+      }
+    },
+    [reportFrame],
+  );
+
+  const frameOutput = useFrameOutput({
+    targetResolution: OBSTACLE_FRAME_RESOLUTION,
+    pixelFormat: 'rgb',
+    enablePreviewSizedOutputBuffers: true,
+    onFrame: onProbeFrame,
+  });
 
   const tfModel = useLocalTfliteModel();
   const modelRef = useRef(tfModel.model);
@@ -348,5 +440,6 @@ export function useObstacleScanner(
   return {
     assessment,
     setPhotoOutput,
+    frameOutput: OBSTACLE_FRAME_PROBE_ENABLED ? frameOutput : null,
   };
 }

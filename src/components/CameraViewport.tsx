@@ -6,6 +6,7 @@ import {
   usePhotoOutput,
 } from "react-native-vision-camera";
 import type {
+  CameraOutput,
   CameraRef,
   CameraPhotoOutput,
   Size,
@@ -29,6 +30,14 @@ export interface CameraViewportProps {
    * theo tham chiếu, object literal inline sẽ gây tạo lại output mỗi render.
    */
   targetResolution?: Size;
+  /**
+   * Output phụ gắn thêm vào session, ngoài photo output.
+   *
+   * Dùng cho frame output của chế độ dò vật cản. Phải là tham chiếu ổn định —
+   * `outputs` là dependency của session, giá trị mới mỗi render sẽ cấu hình lại
+   * camera liên tục (chính là lỗi remount loop đã sửa ở 83336b0).
+   */
+  extraOutput?: CameraOutput | null;
 }
 
 /**
@@ -47,6 +56,7 @@ export const CameraViewport = forwardRef<CameraRef, CameraViewportProps>(
       onPhotoOutputReady,
       onPhotoOutputLost,
       targetResolution,
+      extraOutput = null,
     },
     ref,
   ) {
@@ -60,7 +70,10 @@ export const CameraViewport = forwardRef<CameraRef, CameraViewportProps>(
 
     // `outputs` là dependency của useCamera nên phải giữ tham chiếu ổn định;
     // mảng literal inline làm session bị cấu hình lại mỗi lần render.
-    const outputs = useMemo(() => [photoOutput], [photoOutput]);
+    const outputs = useMemo(
+      () => (extraOutput == null ? [photoOutput] : [photoOutput, extraOutput]),
+      [photoOutput, extraOutput],
+    );
 
     useEffect(() => {
       if (!isActive) {
