@@ -66,6 +66,7 @@ export const CAPTURE = {
     "Nói 'hỏi' để đặt câu hỏi, 'chụp tiếp' để chụp ảnh mới, hoặc 'đọc lại' để nghe lại.",
   BACK_TO_CAMERA: 'Đã quay lại chế độ máy ảnh.',
   NO_IMAGE_YET: 'Chưa có ảnh nào. Hãy chụp ảnh trước.',
+  PROCESSING_WAIT: 'Đang xử lý ảnh, vui lòng chờ.',
   IMAGE_LABEL: 'Ảnh vừa chụp',
 };
 

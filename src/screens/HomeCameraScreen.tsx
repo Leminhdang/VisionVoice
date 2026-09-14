@@ -173,6 +173,29 @@ export default function HomeCameraScreen({
     void audioSession.speakExclusive(CAPTURE.BACK_TO_CAMERA);
   }, []);
 
+  /**
+   * Chặn lệnh giọng nói trong lúc đang chụp/phân tích/đọc kết quả.
+   *
+   * lastImage và lastDescription chỉ được gán SAU khi phân tích xong, nên suốt
+   * quá trình xử lý chúng vẫn là null. Lệnh "hỏi" hay "đọc lại" nói vào lúc đó
+   * rơi thẳng vào nhánh NO_IMAGE_YET và app đáp "Chưa có ảnh nào. Hãy chụp ảnh
+   * trước." — vừa sai, vừa khiến người khiếm thị tưởng cú chụp vừa rồi hỏng.
+   *
+   * Không tắt hẳn mic: im lặng sau khi nói lệnh không phân biệt được với "máy
+   * không nghe thấy", và lệnh "dừng lại" phải luôn dùng được. Thay vào đó trả
+   * lời đúng tình trạng.
+   *
+   * flush: false để câu này XẾP HÀNG sau lời đang đọc dở thay vì cắt ngang —
+   * lúc ở phase 'speaking' thì phần đang đọc chính là nội dung mô tả ảnh.
+   */
+  const rejectWhileProcessing = useCallback((): boolean => {
+    if (!isProcessing) {
+      return false;
+    }
+    void audioSession.speakExclusive(CAPTURE.PROCESSING_WAIT, { flush: false });
+    return true;
+  }, [isProcessing]);
+
   const captureFlow = useCallback(
     (trigger: CaptureTrigger) => {
       // Từ màn kết quả, lệnh "chụp" đưa về chế độ máy ảnh thay vì chụp ngay.
@@ -180,10 +203,17 @@ export default function HomeCameraScreen({
         handleNewCapture();
         return;
       }
+      if (rejectWhileProcessing()) return;
       if (!canCapture) return;
       debouncedCapture(trigger);
     },
-    [hasResult, canCapture, handleNewCapture, debouncedCapture],
+    [
+      hasResult,
+      canCapture,
+      handleNewCapture,
+      debouncedCapture,
+      rejectWhileProcessing,
+    ],
   );
 
   const pickImage = useCallback(async (): Promise<void> => {
@@ -247,6 +277,7 @@ export default function HomeCameraScreen({
   );
 
   const openQA = useCallback(() => {
+    if (rejectWhileProcessing()) return;
     if (lastImage === null || lastDescription === null) {
       void audioSession.speakExclusive(CAPTURE.NO_IMAGE_YET);
       return;
@@ -255,15 +286,16 @@ export default function HomeCameraScreen({
       image: lastImage,
       caption: lastDescription,
     });
-  }, [lastImage, lastDescription, navigation]);
+  }, [lastImage, lastDescription, navigation, rejectWhileProcessing]);
 
   const repeatDescription = useCallback(() => {
+    if (rejectWhileProcessing()) return;
     if (lastDescription === null) {
       void audioSession.speakExclusive(CAPTURE.NO_IMAGE_YET);
       return;
     }
     void audioSession.speakExclusive(lastDescription);
-  }, [lastDescription]);
+  }, [lastDescription, rejectWhileProcessing]);
 
   const openSettings = useCallback(
     () => navigation.navigate("Settings"),
