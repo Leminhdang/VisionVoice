@@ -1088,6 +1088,25 @@
     xcode "^3.0.1"
     xml2js "0.6.0"
 
+"@expo/config-plugins@~56.0.16":
+  version "56.0.16"
+  resolved "https://registry.yarnpkg.com/@expo/config-plugins/-/config-plugins-56.0.16.tgz#17c52743250d9ef2c44499068f337c6e515c5aef"
+  integrity sha512-IfdCDxIGpaeaBN+r1DFg3j8Vmg/pN0G58WMaJwJw++dopSU0CLmXL8348llPKvvUpSEQQhx6TyVi5au6spZCbw==
+  dependencies:
+    "@expo/config-types" "^56.0.7"
+    "@expo/json-file" "~10.2.0"
+    "@expo/plist" "^0.7.0"
+    "@expo/require-utils" "^56.1.7"
+    "@expo/sdk-runtime-versions" "^1.0.0"
+    chalk "^4.1.2"
+    debug "^4.3.5"
+    getenv "^2.0.0"
+    glob "^13.0.0"
+    semver "^7.5.4"
+    slugify "^1.6.6"
+    xcode "^3.0.1"
+    xml2js "0.6.0"
+
 "@expo/config-types@^56.0.7":
   version "56.0.7"
   resolved "https://registry.yarnpkg.com/@expo/config-types/-/config-types-56.0.7.tgz#2dca8f469f5af29a772933a18e28dd8f97afd53a"
@@ -3684,6 +3703,15 @@ expo-speech@~56.0.3:
   resolved "https://registry.yarnpkg.com/expo-speech/-/expo-speech-56.0.3.tgz#c691d98ea742c62d64af9c9ebf42b2cfbaaf8e7a"
   integrity sha512-NkO7RX+BgJCALrjL/6C9AsyenkmJD9EBDIKAQmSN6BLrcXxwZnyQ9TSo/ZTSDSY9Y28aStXHfEBQogt2qUrP9w==
 
+expo-splash-screen@~56.0.15:
+  version "56.0.15"
+  resolved "https://registry.yarnpkg.com/expo-splash-screen/-/expo-splash-screen-56.0.15.tgz#1aa0fb4cbd65255d249d977c2649739e089af8e2"
+  integrity sha512-z2fmhPFx/ZYxWo7Roy8+uKr+Y+R6o11Ejd6zGgI4JWyXYN2A6P3+Hp3nKlGkip/hBT4TXiIw+54JCQNC3D3oKQ==
+  dependencies:
+    "@expo/config-plugins" "~56.0.16"
+    "@expo/image-utils" "^0.10.5"
+    xml2js "0.6.0"
+
 expo-status-bar@~56.0.4:
   version "56.0.4"
   resolved "https://registry.yarnpkg.com/expo-status-bar/-/expo-status-bar-56.0.4.tgz#01a0b6f9946ae51fe9d85c961ae9b485383cfcab"
@@ -5694,12 +5722,22 @@ react-freeze@^1.0.0:
   resolved "https://registry.yarnpkg.com/react-freeze/-/react-freeze-1.0.4.tgz#cbbea2762b0368b05cbe407ddc9d518c57c6f3ad"
   integrity sha512-r4F0Sec0BLxWicc7HEyo2x3/2icUTrRmDjaaRyzzn+7aDyFZliszMDOgLVwSnQnYENOlL1o569Ze2HZefk8clA==
 
-"react-is-18@npm:react-is@^18.3.1", react-is@^18.0.0:
+"react-is-18@npm:react-is@^18.3.1":
   version "18.3.1"
   resolved "https://registry.yarnpkg.com/react-is/-/react-is-18.3.1.tgz#e83557dc12eae63a99e003a46388b1dcbb44db7e"
   integrity sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==
 
-"react-is-19@npm:react-is@^19.2.5", react-is@^19.1.0, react-is@^19.2.3:
+"react-is-19@npm:react-is@^19.2.5":
+  version "19.2.8"
+  resolved "https://registry.yarnpkg.com/react-is/-/react-is-19.2.8.tgz#09826f9fbc187bc668e3e5c62edc001f804d5018"
+  integrity sha512-s5un28nYxKJw5gvUHyW5PCC28CvBqLu9r3cWgzHT4Vo/5fqqkFcdRYsGcKf50WMPpjjFZS5d76fn3YCo2njKwQ==
+
+react-is@^18.0.0:
+  version "18.3.1"
+  resolved "https://registry.yarnpkg.com/react-is/-/react-is-18.3.1.tgz#e83557dc12eae63a99e003a46388b1dcbb44db7e"
+  integrity sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==
+
+react-is@^19.1.0, react-is@^19.2.3:
   version "19.2.8"
   resolved "https://registry.yarnpkg.com/react-is/-/react-is-19.2.8.tgz#09826f9fbc187bc668e3e5c62edc001f804d5018"
   integrity sha512-s5un28nYxKJw5gvUHyW5PCC28CvBqLu9r3cWgzHT4Vo/5fqqkFcdRYsGcKf50WMPpjjFZS5d76fn3YCo2njKwQ==
