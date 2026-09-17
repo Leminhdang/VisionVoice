@@ -8,6 +8,8 @@ import { getApp } from '@react-native-firebase/app';
 import appCheck, { initializeAppCheck } from '@react-native-firebase/app-check';
 import type { FirebaseAppCheckTypes } from '@react-native-firebase/app-check';
 
+import { APP_CHECK_DEBUG_TOKEN } from '../constants/config';
+
 type AppCheck = FirebaseAppCheckTypes.Module;
 
 let hasInitialized = false;
@@ -24,15 +26,16 @@ export async function initFirebase(): Promise<void> {
   hasInitialized = true;
   try {
     const provider = appCheck().newReactNativeFirebaseAppCheckProvider();
+    const debugToken = APP_CHECK_DEBUG_TOKEN || undefined;
+    const useDebugProvider = __DEV__ || debugToken !== undefined;
     provider.configure({
-      android: { provider: __DEV__ ? 'debug' : 'playIntegrity' },
-      apple: {
-        provider: __DEV__ ? 'debug' : 'appAttestWithDeviceCheckFallback',
-      },
+      android: useDebugProvider
+        ? { provider: 'debug', debugToken }
+        : { provider: 'playIntegrity' },
+      apple: useDebugProvider
+        ? { provider: 'debug', debugToken }
+        : { provider: 'appAttestWithDeviceCheckFallback' },
     });
-    // Không hardcode debug token: provider 'debug' sẽ in token ra native log
-    // (adb logcat / Xcode console) ở lần chạy đầu — đăng ký token đó trong
-    // Firebase console → App Check → Debug tokens.
     appCheckInstance = await initializeAppCheck(getApp(), {
       provider,
       isTokenAutoRefreshEnabled: true,

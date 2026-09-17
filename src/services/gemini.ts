@@ -18,8 +18,7 @@ import {
   MOCK_QA_ANSWER,
 } from '../constants/config';
 import { DESCRIBE_PROMPT, GEMINI_SYSTEM_INSTRUCTION } from '../constants/strings';
-// TẠM TẮT APP CHECK để gọi Gemini khi test/build — BẬT LẠI trước khi nộp.
-// import { getAppCheckInstance } from './firebase';
+import { getAppCheckInstance } from './firebase';
 import type { PreparedImage } from './imagePipeline';
 import { logMetric } from './metrics';
 
@@ -53,8 +52,7 @@ function getAiInstance(): AI {
   // AIOptions.appCheck (23.8.8) nhận AppCheck | null nên truyền thẳng instance từ firebase.ts.
   aiInstance = getAI(getApp(), {
     backend: new GoogleAIBackend(),
-    // TẠM TẮT APP CHECK để gọi Gemini khi test/build — BẬT LẠI trước khi nộp.
-    // appCheck: getAppCheckInstance(),
+    appCheck: getAppCheckInstance(),
   });
   return aiInstance;
 }

@@ -254,6 +254,17 @@ export const SPEECH_RECOGNITION_LOCALE = 'vi-VN';
 export const DEFAULT_TTS_RATE = 0.9;
 export const DEFAULT_TTS_PITCH = 1.0;
 
+// App Check
+/**
+ * Debug token cố định cho App Check, đọc từ .env.local lúc bundle
+ * (EXPO_PUBLIC_APP_CHECK_DEBUG_TOKEN). Có giá trị thì MỌI bản build — kể cả APK
+ * release cài tay — dùng provider debug với token này, khỏi đăng ký token từng
+ * máy. Token nằm trong APK nên chỉ dùng cho bản demo, thu hồi trên console sau
+ * khi bảo vệ. Để trống = bản dev dùng token tự sinh, bản release dùng Play
+ * Integrity / App Attest.
+ */
+export const APP_CHECK_DEBUG_TOKEN = process.env.EXPO_PUBLIC_APP_CHECK_DEBUG_TOKEN ?? '';
+
 // Modes
 export const MOCK_MODE: boolean = false;
 export const METRICS_ENABLED = true;

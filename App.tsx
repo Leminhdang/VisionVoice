@@ -4,8 +4,7 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RootNavigator } from './src/navigation/RootNavigator';
-// TẠM TẮT APP CHECK để gọi Gemini khi test/build — BẬT LẠI trước khi nộp.
-// import { initFirebase } from './src/services/firebase';
+import { initFirebase } from './src/services/firebase';
 import { loadObstacleModel } from './src/services/obstacleModel';
 import { initTts } from './src/services/tts';
 import { SettingsProvider } from './src/state/SettingsContext';
@@ -29,8 +28,7 @@ export default function App() {
     // Singleton trọn vòng đời app — tts.ts và firebase.ts
     // ghi rõ chỉ gọi một lần từ App.tsx và không có teardown.
     initTts();
-    // TẠM TẮT APP CHECK để gọi Gemini khi test/build — BẬT LẠI trước khi nộp.
-    // void initFirebase();
+    void initFirebase();
     // Chép + nạp model dò vật cản ngay từ đầu, chạy nền: vào chế độ dò là dùng
     // được luôn. CỐ Ý KHÔNG nói gì khi hỏng — lúc này usePermissionBootstrap
     // đang đọc chuỗi xin quyền, chen vào là nhiễu, mà người dùng cũng chưa vào
