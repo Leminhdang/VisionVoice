@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import type { TensorflowModelDelegate } from 'react-native-fast-tflite';
 
 // Gemini models (Firebase AI Logic)
-export const GEMINI_MODEL = 'gemini-3.6-flash';
+export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 export const GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 
 // Image capture & processing
