@@ -4,12 +4,13 @@
 
 ## Current Focus
 
-(no active implementation task)
+- 2026-09-22: Đã hoàn tất đọc lại tài liệu và source topology trước task mới; chưa bắt đầu implementation.
+- Handoff obstacle detection vẫn ACTIVE và cần được đọc tiếp nếu task kế tiếp liên quan đến dò vật cản.
 
 ## Current State
 
-- Branch `feature/rebuild-v2`, HEAD `49f15e6`.
-- VisionVoice v2 là app Expo SDK 54/RN 0.81.5/TypeScript strict, dev client, 4 màn hình.
+- Branch hiện tại `feature/obstacle`, HEAD `7869927`.
+- VisionVoice v2 là app Expo SDK 56/RN 0.85.3/React 19.2.3/TypeScript 6 strict, dev client, 4 màn hình.
 - Ba tính năng chính đã có source: mô tả ảnh qua Gemini/Firebase AI Logic, Q&A nhiều lượt theo ảnh, cảnh báo vật cản on-device bằng ML Kit.
 - Half-duplex audio được tập trung tại `services/audioSession.ts`; screen/component không gọi `Speech.speak` trực tiếp.
 - Toàn bộ chuỗi người dùng ở `constants/strings.ts`; tunable ở `constants/config.ts`; settings persist bằng AsyncStorage.
@@ -43,6 +44,28 @@
 5. `.githooks/pre-commit` tham chiếu `memory/validate.sh` không tồn tại.
 
 ## Session Log (last 5 sessions)
+
+### 2026-09-22 — Hiển thị caption sớm
+- Sửa `src/screens/HomeCameraScreen.tsx`: lưu ảnh/caption ngay sau `describeImage()` trả response; `CaptionPanel` hiển thị caption trong lúc TTS đang đọc.
+- `yarn typecheck`: pass; `git diff --check`: pass.
+
+### 2026-09-22 — Log độ trễ Gemini
+- Thêm `latencyMs` vào metric `api_response`, đo từ `api_request` đến response/lỗi cho describe, QA, fallback và mock.
+- Cập nhật `docs/dev-docs.html`; `yarn typecheck`: pass; `git diff --check`: pass.
+
+### 2026-09-22 — Warm-up App Check cho Gemini
+- `firebase.ts` cache promise khởi tạo và lấy App Check token bằng modular `getToken()` ngay khi app boot.
+- `describeImage()` chờ promise Firebase trước khi bắt đầu đo/request Gemini; chưa thay payload, prompt hoặc model.
+- `yarn typecheck`: pass; `git diff --check`: pass; chưa benchmark trên thiết bị thật.
+
+### 2026-09-22 — Giảm payload và giới hạn output Gemini
+- Đã thử giới hạn output Gemini ở 128 token và giảm `IMAGE_RESIZE_WIDTH` từ 800 xuống 640; caption giảm chất lượng nên đã hoàn tác cả hai, giữ `IMAGE_RESIZE_WIDTH = 800` và `IMAGE_COMPRESS = 0.5`.
+- `yarn typecheck`: pass; `git diff --check`: pass.
+
+### 2026-09-22 — Project onboarding
+- Đọc `memory/README.md`, `COMPACT.md`, `handoff.md`, `INDEX.md`, `context.md`, `lessons-learned.md` và global lessons.
+- Đọc `README.md`, `package.json`, `tsconfig.json`, `app.json`, tài liệu App Check/evaluation/pre-demo/dev docs, cấu hình hiện tại và các file chính của obstacle pipeline.
+- Xác nhận không có source change mới; worktree chỉ có các file tài liệu chưa được track và `.claude/`.
 
 ### 2026-08-04 — Codebase comprehension
 - Đọc toàn bộ source TS/TSX, unit tests, manifests, docs, scripts, memory và plan rebuild v2.

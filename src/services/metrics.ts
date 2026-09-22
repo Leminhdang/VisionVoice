@@ -19,6 +19,7 @@ export type MetricEvent =
   | {
       event: 'api_response';
       captureId: number;
+      latencyMs: number;
       ok: boolean;
       errorCode?: string;
       mock?: boolean;

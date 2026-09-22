@@ -96,12 +96,12 @@ export default function HomeCameraScreen({
         dispatch("ANALYZE_START");
         void audioSession.speakExclusive(CAPTURE.ANALYZING);
         const description = await describeImage(image, captureId);
+        setLastImage(image);
+        setLastDescription(description);
         dispatch("SPEAK_START");
         logMetric({ event: "tts_start", captureId, chars: description.length });
         await audioSession.speakExclusive(description);
         dispatch("DONE");
-        setLastImage(image);
-        setLastDescription(description);
         await audioSession.speakExclusive(CAPTURE.RESULT_HINT);
       } catch (err) {
         console.warn("Lỗi khi phân tích ảnh:", err);
@@ -387,7 +387,11 @@ export default function HomeCameraScreen({
           },
         ]}
       >
-        <CaptionPanel imageUri={pendingImage.uri} caption="" isLoading />
+        <CaptionPanel
+          imageUri={pendingImage.uri}
+          caption={lastDescription ?? ""}
+          isLoading={lastDescription === null}
+        />
       </View>
     );
   }

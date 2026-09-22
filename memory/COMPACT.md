@@ -5,7 +5,7 @@
 
 ## Project
 
-VisionVoice v2 — Expo dev client · RN · TS strict · RNFB (Gemini qua Firebase AI Logic + App Check, project `visionvoice-app-2026`) · EfficientDet-Lite0/TFLite obstacle loop · react-navigation 4 màn · half-duplex audio. App tiếng Việt cho người khiếm thị: mô tả ảnh, hỏi đáp giọng nói, cảnh báo vật cản. GRIT/ngrok đã xoá khỏi runtime và được giữ làm baseline đánh giá.
+VisionVoice v2 — Expo SDK 56 dev client · RN 0.85.3 · TypeScript 6 strict · RNFB (Gemini qua Firebase AI Logic + App Check, project `visionvoice-app-2026`) · EfficientDet-Lite0/TFLite obstacle loop · react-navigation 4 màn · half-duplex audio. App tiếng Việt cho người khiếm thị: mô tả ảnh, hỏi đáp giọng nói, cảnh báo vật cản. GRIT/ngrok đã xoá khỏi runtime và được giữ làm baseline đánh giá.
 
 ## Active Task
 
@@ -28,4 +28,4 @@ VisionVoice v2 — Expo dev client · RN · TS strict · RNFB (Gemini qua Fireba
 
 ## Last Session
 
-2026-08-12 — Debug obstacle detection. Discovered `Photo.getPixelBuffer()` returns YUV on Android (not RGBA). Tried frame processor approach (`useFrameOutput`) — onFrame never fired. Reverted to capturePhoto + YUV→RGB conversion. Model loads via `useTensorflowModel` hook (moved from App.tsx init). Score range still very low (max 0.07). Need to verify YUV conversion or check if buffer is actually JPEG.
+2026-09-22 — Sửa HomeCamera hiển thị caption sớm; thêm `latencyMs`; warm-up App Check. Đã hoàn tác ảnh 640px và giới hạn output 128 token vì caption giảm chất lượng.

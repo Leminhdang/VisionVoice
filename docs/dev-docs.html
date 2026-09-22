@@ -161,7 +161,7 @@ ul { padding-left: 22px; }
 </table></li>
 <li><b>Fallback model</b>: thử <code>GEMINI_MODEL</code> (<code>gemini-3.6-flash</code>); nếu lỗi quota / "not found" / 404 thì retry 1 lần với <code>GEMINI_FALLBACK_MODEL</code> (<code>gemini-3.1-flash-lite</code>). Chỉ cho describe, không cho QA.</li>
 <li><b>MOCK_MODE</b>: trả <code>MOCK_DESCRIPTION</code> / <code>MOCK_QA_ANSWER</code> sau <code>MOCK_DELAY_MS</code> = 1500ms, vẫn log metric <code>mock: true</code> — dev không cần mạng/quota.</li>
-<li><b>Metrics theo captureId</b>: có truyền <code>captureId</code> thì mỗi call log <code>api_request</code> (kind <code>describe</code>|<code>qa</code>) và <code>api_response</code> (<code>ok</code>, <code>errorCode</code> = kind khi fail); không truyền → không log.</li>
+<li><b>Metrics theo captureId</b>: có truyền <code>captureId</code> thì mỗi call log <code>api_request</code> (kind <code>describe</code>|<code>qa</code>) và <code>api_response</code> (<code>ok</code>, <code>latencyMs</code>, <code>errorCode</code> = kind khi fail); không truyền → không log.</li>
 <li>AI instance + model cache module-level; system instruction chung <code>GEMINI_SYSTEM_INSTRUCTION</code>.</li>
 </ul>
 
@@ -282,7 +282,7 @@ Chỉ restart khi <code>wantListening && !isSuspended && !isSpeaking</code>.</li
 <tr><td><code>session_start</code></td><td><code>note?</code></td></tr>
 <tr><td><code>capture_start</code></td><td><code>captureId</code>, <code>trigger: 'voice'|'volume'|'button'|'gallery'</code></td></tr>
 <tr><td><code>api_request</code></td><td><code>captureId</code>, <code>kind: 'describe'|'qa'</code></td></tr>
-<tr><td><code>api_response</code></td><td><code>captureId</code>, <code>ok</code>, <code>errorCode?</code>, <code>mock?</code></td></tr>
+<tr><td><code>api_response</code></td><td><code>captureId</code>, <code>latencyMs</code>, <code>ok</code>, <code>errorCode?</code>, <code>mock?</code></td></tr>
 <tr><td><code>tts_start</code></td><td><code>captureId</code>, <code>chars</code></td></tr>
 <tr><td><code>qa_question</code> / <code>qa_answer</code></td><td><code>captureId</code>, <code>transcript</code> / <code>answer</code></td></tr>
 <tr><td><code>obstacle_frame</code></td><td><code>frameId</code>, <code>detectMs</code>, <code>detections</code></td></tr>

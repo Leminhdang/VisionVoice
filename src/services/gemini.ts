@@ -18,7 +18,7 @@ import {
   MOCK_QA_ANSWER,
 } from '../constants/config';
 import { DESCRIBE_PROMPT, GEMINI_SYSTEM_INSTRUCTION } from '../constants/strings';
-import { getAppCheckInstance } from './firebase';
+import { getAppCheckInstance, initFirebase } from './firebase';
 import type { PreparedImage } from './imagePipeline';
 import { logMetric } from './metrics';
 
@@ -145,21 +145,32 @@ async function withTimeout<T>(work: Promise<T>, label: string): Promise<T> {
   }
 }
 
-function logRequest(captureId: number | undefined, kind: 'describe' | 'qa'): void {
+function logRequest(
+  captureId: number | undefined,
+  kind: 'describe' | 'qa',
+): number | undefined {
   if (captureId === undefined) {
-    return;
+    return undefined;
   }
+  const startedAt = Date.now();
   logMetric({ event: 'api_request', captureId, kind });
+  return startedAt;
 }
 
 function logResponse(
   captureId: number | undefined,
+  startedAt: number | undefined,
   outcome: { ok: boolean; errorCode?: string; mock?: boolean },
 ): void {
-  if (captureId === undefined) {
+  if (captureId === undefined || startedAt === undefined) {
     return;
   }
-  logMetric({ event: 'api_response', captureId, ...outcome });
+  logMetric({
+    event: 'api_response',
+    captureId,
+    latencyMs: Math.max(0, Date.now() - startedAt),
+    ...outcome,
+  });
 }
 
 function extractText(response: { text: () => string }): string {
@@ -201,19 +212,22 @@ async function describeWithFallback(image: PreparedImage): Promise<string> {
  * trả văn bản lỗi như caption. Truyền captureId để ghi metric api_request/api_response.
  */
 export async function describeImage(image: PreparedImage, captureId?: number): Promise<string> {
-  logRequest(captureId, 'describe');
+  if (!MOCK_MODE) {
+    await initFirebase();
+  }
+  const startedAt = logRequest(captureId, 'describe');
   if (MOCK_MODE) {
     await delay(MOCK_DELAY_MS);
-    logResponse(captureId, { ok: true, mock: true });
+    logResponse(captureId, startedAt, { ok: true, mock: true });
     return MOCK_DESCRIPTION;
   }
   try {
     const caption = await describeWithFallback(image);
-    logResponse(captureId, { ok: true });
+    logResponse(captureId, startedAt, { ok: true });
     return caption;
   } catch (err) {
     const geminiError = toGeminiError(err);
-    logResponse(captureId, { ok: false, errorCode: geminiError.kind });
+    logResponse(captureId, startedAt, { ok: false, errorCode: geminiError.kind });
     throw geminiError;
   }
 }
@@ -221,9 +235,9 @@ export async function describeImage(image: PreparedImage, captureId?: number): P
 function createMockQASession(): QASession {
   return {
     async ask(_question: string, captureId?: number): Promise<string> {
-      logRequest(captureId, 'qa');
+      const startedAt = logRequest(captureId, 'qa');
       await delay(MOCK_DELAY_MS);
-      logResponse(captureId, { ok: true, mock: true });
+      logResponse(captureId, startedAt, { ok: true, mock: true });
       return MOCK_QA_ANSWER;
     },
     dispose(): void {
@@ -249,7 +263,7 @@ export function createQASession(image: PreparedImage): QASession {
       if (!chat) {
         throw new GeminiError('unknown', 'Phiên hỏi đáp đã kết thúc.');
       }
-      logRequest(captureId, 'qa');
+      const startedAt = logRequest(captureId, 'qa');
       const parts: Part[] = isFirstTurn
         ? [buildImagePart(image), { text: question }]
         : [{ text: question }];
@@ -260,11 +274,11 @@ export function createQASession(image: PreparedImage): QASession {
         );
         const answer = extractText(result.response);
         isFirstTurn = false;
-        logResponse(captureId, { ok: true });
+        logResponse(captureId, startedAt, { ok: true });
         return answer;
       } catch (err) {
         const geminiError = toGeminiError(err);
-        logResponse(captureId, { ok: false, errorCode: geminiError.kind });
+        logResponse(captureId, startedAt, { ok: false, errorCode: geminiError.kind });
         throw geminiError;
       }
     },
