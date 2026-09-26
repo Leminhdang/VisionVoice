@@ -161,9 +161,29 @@ describe('loadObstacleModel', () => {
     expect(second).toBe(first);
   });
 
-  test('nạp hỏng thì lần vào sau thử lại được', async () => {
-    // Arrange — delegate GPU từ chối model ở lần đầu.
+  test('delegate tăng tốc dựng không nổi interpreter thì rơi về CPU', async () => {
+    // Arrange — máy có delegate nhưng dựng interpreter thất bại.
+    expect(TFLITE_DELEGATES.length).toBeGreaterThan(0);
     mockLoadTensorflowModel
+      .mockRejectedValueOnce(new Error('Failed to create TFLite interpreter!'))
+      .mockResolvedValueOnce(MODEL_HANDLE);
+
+    // Act
+    const model = await obstacleModel.loadObstacleModel();
+
+    // Assert — chậm hơn nhưng chế độ dò vật cản vẫn chạy được.
+    expect(model).toBe(MODEL_HANDLE);
+    expect(mockLoadTensorflowModel).toHaveBeenNthCalledWith(
+      2,
+      { url: MODEL_URI },
+      [],
+    );
+  });
+
+  test('nạp hỏng cả bằng CPU thì lần vào sau thử lại được', async () => {
+    // Arrange — cả delegate lẫn CPU đều từ chối ở lần đầu.
+    mockLoadTensorflowModel
+      .mockRejectedValueOnce(new Error('GPU delegate'))
       .mockRejectedValueOnce(new Error('GPU delegate'))
       .mockResolvedValueOnce(MODEL_HANDLE);
 
@@ -174,7 +194,6 @@ describe('loadObstacleModel', () => {
     const retried = await obstacleModel.loadObstacleModel();
 
     // Assert — promise hỏng không được giữ lại làm cache vĩnh viễn.
-    expect(mockLoadTensorflowModel).toHaveBeenCalledTimes(2);
     expect(retried).toBe(MODEL_HANDLE);
   });
 

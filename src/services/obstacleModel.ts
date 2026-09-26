@@ -89,9 +89,21 @@ export function loadObstacleModel(): Promise<TensorflowModel> {
     return modelPromise;
   }
 
-  const pending = ensureModelFile().then((file) =>
-    loadTensorflowModel({ url: file.uri }, TFLITE_DELEGATES),
-  );
+  // Delegate tăng tốc có máy không dựng nổi interpreter (emulator không có
+  // OpenCL thật là ca điển hình). Rơi về CPU thay vì chết hẳn: chậm hơn nhưng
+  // chế độ dò vật cản vẫn chạy.
+  const pending = ensureModelFile().then(async (file) => {
+    const source = { url: file.uri };
+    try {
+      return await loadTensorflowModel(source, TFLITE_DELEGATES);
+    } catch (e) {
+      if (TFLITE_DELEGATES.length === 0) {
+        throw e;
+      }
+      console.warn('Lỗi khi nạp model bằng delegate tăng tốc, thử lại bằng CPU:', e);
+      return await loadTensorflowModel(source, []);
+    }
+  });
   modelPromise = pending;
   // So sánh danh tính trước khi xoá: lần thử lại đang bay không được bị lần
   // hỏng trước đó đạp đổ.
