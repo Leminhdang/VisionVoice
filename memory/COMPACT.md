@@ -9,7 +9,7 @@ VisionVoice v2 — Expo SDK 56 dev client · RN 0.85.3 · TypeScript 6 strict ·
 
 ## Active Task
 
-**Fix obstacle detection** — TFLite EfficientDet-Lite0 chạy nhưng trả 0 detections. Root cause: `Photo.getPixelBuffer()` trên Android trả YUV_420_888 (không phải RGBA). Đã thêm `yuvToRgbResized()` nhưng CHƯA XÁC NHẬN score range cải thiện. **ĐỌC `memory/handoff.md` CHI TIẾT TRƯỚC KHI LÀM.**
+**Verify the reworked obstacle scanner on the S23.** It now uses frame-stream scanning at ~6 FPS with a photo fallback, a severity smoother and trial thresholds of 0.06 / 0.15. **Read `memory/handoff.md` first.**
 
 ## Critical Rules (top 5 lessons)
 
@@ -21,11 +21,10 @@ VisionVoice v2 — Expo SDK 56 dev client · RN 0.85.3 · TypeScript 6 strict ·
 
 ## Blockers
 
-- Obstacle detection: pixel buffer format (YUV vs JPEG?) chưa 100% confirmed — cần log first bytes
-- Packages thừa trong package.json: `react-native-vision-camera-worklets`, `react-native-worklets` (frame processor approach failed)
-- iOS prebuild fails (missing RNWorklets pod) — chỉ Android hoạt động
-- `babel.config.js` mới tạo với `react-native-worklets/plugin` — cần `--reset-cache` khi start Metro
+- Gemini 401 on the sideloaded release APK (App Check / Play Integrity). Either unenforce it in the console or use a fixed debug token.
+- Frame mode and the new thresholds are not yet verified on a device.
+- iOS prebuild is untested on this branch.
 
 ## Last Session
 
-2026-09-22 — Sửa HomeCamera hiển thị caption sớm; thêm `latencyMs`; warm-up App Check. Đã hoàn tác ảnh 640px và giới hạn output 128 token vì caption giảm chất lượng.
+2026-10-08: Fixed corridor false alarms (rotated frame size, band-coverage weighting), hid object labels, added the severity smoother and frame-stream scanning. Updated the thesis docx, pptx and talk script in final_docs/. Built an arm64 APK (60 MB).
