@@ -30,6 +30,8 @@ export type MetricEvent =
   | {
       event: 'obstacle_frame';
       frameId: number;
+      /** Khung lấy từ luồng camera ('frame') hay từ chụp ảnh tĩnh ('photo'). */
+      source: 'frame' | 'photo';
       /** Tổng thời gian một khung: chụp + decode + tiền xử lý + suy luận. */
       detectMs: number;
       /** Chụp ảnh từ camera. */
@@ -56,6 +58,8 @@ export type MetricEvent =
   // Khung không dò được (model chưa nạp / lỗi inference). Tách khỏi
   // obstacle_frame để số liệu detections không bị pha tạp.
   | { event: 'obstacle_detect_failed'; frameId: number; consecutive: number }
+  // Vòng quét đổi nguồn khung — lùi từ frame output về chụp ảnh tĩnh.
+  | { event: 'obstacle_mode'; mode: 'frame' | 'photo'; reason: string }
   | {
       event: 'obstacle_alert';
       frameId: number;

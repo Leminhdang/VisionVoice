@@ -26,28 +26,40 @@ export const TARGET_PICTURE_SIZE = 1280;
  */
 export const OBSTACLE_TARGET_PERIOD_MS = 700;
 /**
- * Bật luồng frame output của VisionCamera, song song với vòng capturePhoto.
+ * Quét từ luồng frame output của VisionCamera thay vì chụp ảnh tĩnh.
  *
  * Đo trên máy: capturePhoto chiếm 497/553 ms mỗi khung (90%), còn model chỉ
  * 28 ms. Nghẽn nằm ở đường CHỤP ẢNH TĨNH — 3A hội tụ, nén JPEG, decode lại —
- * chứ không ở suy luận. Frame output lấy pixel thẳng từ pipeline camera, bỏ hết
- * chuỗi đó.
+ * chứ không ở suy luận. Frame output lấy pixel thẳng từ pipeline camera nên
+ * nhịp quét lên được ~6 khung/giây.
  *
- * Lần trước đã thử hướng này và `onFrame` KHÔNG BAO GIỜ NỔ (xem memory/handoff),
- * nhiều khả năng do Metro chưa reset cache sau khi thêm babel plugin worklets.
- * Nên đây mới chỉ là BƯỚC DÒ: chỉ ghi log kích thước/định dạng khung, chưa đụng
- * vào vòng quét thật. Xác nhận nổ rồi mới chuyển hẳn.
+ * Lần thử đầu `onFrame` chỉ nổ một lần rồi im: khung không được dispose()
+ * thì CameraX ngừng cấp khung. Worklet bây giờ luôn dispose trong finally.
+ * Không có kết quả trong OBSTACLE_FRAME_WATCHDOG_MS thì tự lùi về vòng
+ * capturePhoto — xem useObstacleScanner.
  *
- * Tắt cờ này nếu việc thêm output làm hỏng phiên camera trên máy nào đó.
+ * Tắt cờ này để quay hẳn về vòng chụp ảnh tĩnh.
  */
-export const OBSTACLE_FRAME_PROBE_ENABLED = true;
+export const OBSTACLE_FRAME_MODE_ENABLED = true;
 /**
  * Độ phân giải mong muốn cho frame output. Chỉ là MỤC TIÊU — session sẽ ưu tiên
  * giữ tỉ lệ khung hình hơn là khớp đúng số pixel.
  */
 export const OBSTACLE_FRAME_RESOLUTION = { width: 480, height: 640 };
-/** Giãn cách ghi log của bước dò, tính bên JS — worklet chạy ở tốc độ camera. */
-export const OBSTACLE_FRAME_PROBE_LOG_MS = 1000;
+/**
+ * Khoảng cách tối thiểu giữa hai lần suy luận trên luồng camera (~6 khung/giây).
+ *
+ * Camera cấp ~30 khung/giây; chạy model mọi khung thì máy nóng nhanh mà không
+ * thêm gì đáng kể ở tốc độ đi bộ. Khung tới sớm hơn mốc này bị bỏ ngay.
+ */
+export const OBSTACLE_FRAME_PERIOD_MS = 150;
+/**
+ * Model đã sẵn sàng mà chừng này mili giây chưa có kết quả nào từ luồng
+ * camera thì coi như frame output không chạy trên máy này, lùi về chụp ảnh.
+ */
+export const OBSTACLE_FRAME_WATCHDOG_MS = 4000;
+/** Số khung lỗi LIÊN TIẾP trong worklet trước khi lùi về chụp ảnh tĩnh. */
+export const OBSTACLE_FRAME_MAX_ERRORS = 5;
 /**
  * Khoảng nghỉ tối thiểu giữa hai khung khi xử lý đã lâu hơn nhịp mục tiêu.
  *

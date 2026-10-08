@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TensorflowPlugin } from 'react-native-fast-tflite';
 import { useFrameOutput } from 'react-native-vision-camera';
 import type {
@@ -6,20 +6,24 @@ import type {
   CameraPhotoOutput,
   Frame,
 } from 'react-native-vision-camera';
-import { scheduleOnRN } from 'react-native-worklets';
+import { createSynchronizable, scheduleOnRN } from 'react-native-worklets';
 
 import {
-  OBSTACLE_FRAME_PROBE_ENABLED,
-  OBSTACLE_FRAME_PROBE_LOG_MS,
+  OBSTACLE_FRAME_MAX_ERRORS,
+  OBSTACLE_FRAME_MODE_ENABLED,
+  OBSTACLE_FRAME_PERIOD_MS,
   OBSTACLE_FRAME_RESOLUTION,
+  OBSTACLE_FRAME_WATCHDOG_MS,
   OBSTACLE_MAX_DETECT_FAILURES,
   OBSTACLE_MIN_FRAME_GAP_MS,
   OBSTACLE_MODEL_NOTICE_DELAY_MS,
   OBSTACLE_TARGET_PERIOD_MS,
+  TFLITE_MODEL_INPUT_SIZE,
 } from '../constants/config';
 import { OBSTACLE } from '../constants/strings';
 import { speakExclusive } from '../services/audioSession';
 import { hapticForSeverity, playDanger } from '../services/feedback';
+import { rgbaToSquareRgb } from '../services/frameSampler';
 import { imageToModelInput } from '../services/imagePreprocess';
 import { logMetric, nextFrameId } from '../services/metrics';
 import {
@@ -46,7 +50,8 @@ interface UseObstacleScannerOptions {
 interface UseObstacleScannerResult {
   assessment: Assessment | null;
   /**
-   * Frame output cần gắn vào <Camera outputs>. null khi bước dò đang tắt.
+   * Frame output cần gắn vào <Camera outputs>. null khi đang quét bằng chụp ảnh
+   * tĩnh (cờ tắt, hoặc đã lùi về vì luồng camera không chạy).
    *
    * Màn hình phải chuyển tiếp giá trị này xuống CameraViewport — không gắn vào
    * session thì output không nhận khung nào và `onFrame` không bao giờ nổ.
@@ -95,41 +100,17 @@ function useLocalTfliteModel(): TensorflowPlugin {
   return plugin;
 }
 
-/**
- * Nhận báo cáo khung từ worklet và ghi log, có tiết chế.
- *
- * Worklet chạy ở tốc độ camera (~30 khung/giây) nên không ghi log trong đó.
- * Toàn bộ phần quyết định nằm bên JS cho dễ sửa và dễ đọc — worklet chỉ đọc vài
- * thuộc tính rồi chuyển sang.
- */
-function createFrameProbeReporter(): (
-  width: number,
-  height: number,
-  pixelFormat: string,
-  bytes: number,
-  isPlanar: boolean,
-) => void {
-  let lastLoggedAt = 0;
-  let seen = 0;
+type ScanMode = 'frame' | 'photo';
 
-  return (width, height, pixelFormat, bytes, isPlanar) => {
-    seen++;
-    const now = Date.now();
-    if (now - lastLoggedAt < OBSTACLE_FRAME_PROBE_LOG_MS) {
-      return;
-    }
-    lastLoggedAt = now;
-    console.log(
-      `VVFRAME ${JSON.stringify({
-        seen,
-        width,
-        height,
-        pixelFormat,
-        bytes,
-        isPlanar,
-      })}`,
-    );
-  };
+/** Số đo một khung, ghi vào obstacle_frame. */
+interface FrameTiming {
+  source: ScanMode;
+  frameId: number;
+  detectMs: number;
+  captureMs: number;
+  decodeMs: number;
+  prepMs: number;
+  inferMs: number;
 }
 
 /**
@@ -200,6 +181,27 @@ export function useObstacleScanner(
   // nên closure của nó giữ mãi giá trị state của lần chạy đầu.
   const lastSeverityRef = useRef<Severity>('safe');
   const sensitivityRef = useRef(settings.obstacleSensitivity);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+
+  /**
+   * Nguồn khung hiện tại. Bắt đầu bằng luồng camera; chỉ đổi một chiều sang
+   * 'photo' khi luồng camera không chạy (xem fallbackToPhoto). Ref để các
+   * callback đọc giá trị mới nhất, state để render lại và tháo frame output.
+   */
+  const [scanMode, setScanMode] = useState<ScanMode>(
+    OBSTACLE_FRAME_MODE_ENABLED ? 'frame' : 'photo',
+  );
+  const scanModeRef = useRef(scanMode);
+  const lastFrameResultAtRef = useRef(0);
+  const frameErrorCountRef = useRef(0);
+  /**
+   * Hai giá trị dùng chung giữa luồng JS và worklet của camera. Worklet chạy ở
+   * runtime riêng nên không đọc được ref của React; Synchronizable là cách
+   * react-native-worklets cho hai bên cùng thấy một giá trị.
+   */
+  const isFrameScanEnabled = useMemo(() => createSynchronizable(false), []);
+  const lastFrameRunAt = useMemo(() => createSynchronizable(0), []);
 
   useEffect(() => {
     sensitivityRef.current = settings.obstacleSensitivity;
@@ -209,48 +211,222 @@ export function useObstacleScanner(
     photoOutputRef.current = output;
   }, []);
 
+  const tfModel = useLocalTfliteModel();
+  const modelRef = useRef(tfModel.model);
+  modelRef.current = tfModel.model;
+
   /**
-   * BƯỚC DÒ frame output — chưa thay vòng quét, chỉ xác nhận đường này sống.
-   *
-   * Lần trước `onFrame` không bao giờ nổ nên cần bằng chứng trước khi viết lại
-   * vòng quét. Nếu log VVFRAME xuất hiện thì đường lấy pixel dùng được và bước
-   * sau mới bỏ capturePhoto (đang chiếm 90% thời gian mỗi khung).
-   *
-   * useFrameOutput phải được gọi VÔ ĐIỀU KIỆN — nó là hook, không thể bọc trong
-   * if. Cờ bật/tắt chỉ quyết định có gắn output vào session hay không.
+   * Phần dùng chung của mọi khung, bất kể nguồn: output model → box → mức thô
+   * → mức đã làm mượt → màn hình, log, giọng nói. Chỉ đọc ref nên ổn định suốt
+   * vòng đời hook.
    */
-  const reportFrame = useRef(createFrameProbeReporter()).current;
-  const onProbeFrame = useCallback(
+  const processDetections = useCallback(
+    (outputs: ArrayBuffer[], frameSize: FrameSize, timing: FrameTiming): void => {
+      const objects = parseDetections(outputs, frameSize.width, frameSize.height);
+      failureCountRef.current = 0;
+
+      const result = assessDetections(
+        objects,
+        frameSize,
+        sensitivityRef.current,
+        lastSeverityRef.current,
+      );
+      // lastSeverityRef giữ mức THÔ cho hysteresis diện tích; màn hình và giọng
+      // nói chỉ thấy mức đã làm mượt — xem severitySmoother.ts.
+      lastSeverityRef.current = result.severity;
+      const smoothed = smootherRef.current?.update(result, Date.now()) ?? result;
+      setAssessment(smoothed);
+
+      // Tách từng chặng: 557 ms/khung đo được không cho biết nghẽn ở chụp,
+      // decode, tiền xử lý hay suy luận — mà bốn chỗ đó cần bốn cách sửa
+      // hoàn toàn khác nhau. areaRatio + severity đi kèm để lần sau đo được
+      // mức có còn nhảy qua lại hay không, thay vì phải suy từ topScore.
+      logMetric({
+        event: 'obstacle_frame',
+        frameId: timing.frameId,
+        source: timing.source,
+        detectMs: timing.detectMs,
+        captureMs: timing.captureMs,
+        decodeMs: timing.decodeMs,
+        prepMs: timing.prepMs,
+        inferMs: timing.inferMs,
+        detections: objects.length,
+        topScore: Number(readTopScore(outputs).toFixed(3)),
+        areaRatio: Number(result.areaRatio.toFixed(3)),
+        severity: result.severity,
+        smoothed: smoothed.severity,
+        frame: `${frameSize.width}x${frameSize.height}`,
+        boxes: objects.map((object) => describeBox(object, frameSize)),
+      });
+
+      const shouldAnnounce =
+        policyRef.current?.shouldAnnounce(smoothed, Date.now()) ?? false;
+      if (shouldAnnounce) {
+        if (smoothed.severity !== 'safe') {
+          logMetric({
+            event: 'obstacle_alert',
+            frameId: timing.frameId,
+            severity: smoothed.severity,
+            label: smoothed.label,
+          });
+        }
+        void announceAssessment(smoothed);
+      }
+    },
+    [],
+  );
+
+  /**
+   * Lùi hẳn về vòng chụp ảnh tĩnh. Một chiều: máy nào đã không chạy được luồng
+   * camera thì thử lại trong cùng phiên chỉ thêm khoảng im lặng.
+   *
+   * Tắt worklet qua Synchronizable NGAY (state chỉ tháo output ở lần render
+   * sau), để worklet không gọi model cùng lúc với vòng chụp ảnh — fast-tflite
+   * không khoá interpreter.
+   */
+  const fallbackToPhoto = useCallback(
+    (reason: string) => {
+      if (scanModeRef.current === 'photo') {
+        return;
+      }
+      scanModeRef.current = 'photo';
+      isFrameScanEnabled.setBlocking(false);
+      setScanMode('photo');
+      console.warn('Lỗi khi quét bằng luồng camera, chuyển sang chụp ảnh:', reason);
+      logMetric({ event: 'obstacle_mode', mode: 'photo', reason });
+    },
+    [isFrameScanEnabled],
+  );
+
+  /** Kết quả một khung từ worklet, chạy trên luồng JS. */
+  const handleFrameResult = useCallback(
+    (outputs: number[][], width: number, height: number, prepMs: number, inferMs: number) => {
+      if (!activeRef.current || scanModeRef.current !== 'frame') {
+        return;
+      }
+      lastFrameResultAtRef.current = Date.now();
+      frameErrorCountRef.current = 0;
+      processDetections(
+        outputs.map((values) => new Float32Array(values).buffer),
+        { width, height },
+        {
+          source: 'frame',
+          frameId: nextFrameId(),
+          detectMs: prepMs + inferMs,
+          captureMs: 0,
+          decodeMs: 0,
+          prepMs,
+          inferMs,
+        },
+      );
+    },
+    [processDetections],
+  );
+
+  const handleFrameError = useCallback(
+    (message: string) => {
+      if (!activeRef.current || scanModeRef.current !== 'frame') {
+        return;
+      }
+      frameErrorCountRef.current += 1;
+      if (frameErrorCountRef.current >= OBSTACLE_FRAME_MAX_ERRORS) {
+        fallbackToPhoto(message);
+      }
+    },
+    [fallbackToPhoto],
+  );
+
+  /**
+   * Worklet chạy trên luồng camera cho MỌI khung (~30/giây). Khung tới sớm hơn
+   * OBSTACLE_FRAME_PERIOD_MS bị bỏ ngay; khung còn lại được cắt vuông, thu nhỏ,
+   * chạy model rồi gửi output (dạng số thường) về luồng JS.
+   *
+   * dispose() trong finally là BẮT BUỘC: khung không được trả lại thì CameraX
+   * ngừng cấp khung — đúng lỗi "onFrame chỉ nổ một lần" của lần thử trước.
+   * runSync chặn luồng camera; dropFramesWhileBusy lo bỏ các khung dồn lại.
+   */
+  const model = tfModel.model;
+  const onFrame = useCallback(
     (frame: Frame) => {
       'worklet';
       try {
-        // Phải dispose trong finally: giữ khung lại làm nghẽn cả pipeline camera.
-        const buffer = frame.isPlanar ? null : frame.getPixelBuffer();
-        scheduleOnRN(
-          reportFrame,
+        if (model == null || !isFrameScanEnabled.getBlocking()) {
+          return;
+        }
+        const startedAt = Date.now();
+        if (startedAt - lastFrameRunAt.getBlocking() < OBSTACLE_FRAME_PERIOD_MS) {
+          return;
+        }
+        lastFrameRunAt.setBlocking(startedAt);
+
+        const size = TFLITE_MODEL_INPUT_SIZE;
+        const input = new Uint8Array(size * size * 3);
+        rgbaToSquareRgb(
+          new Uint8Array(frame.getPixelBuffer()),
           frame.width,
           frame.height,
-          String(frame.pixelFormat),
-          buffer?.byteLength ?? 0,
-          frame.isPlanar,
+          frame.bytesPerRow,
+          size,
+          input,
         );
+        const preparedAt = Date.now();
+        const outputs = model.runSync([input.buffer]);
+        const inferredAt = Date.now();
+        // fast-tflite dùng lại buffer output ở lần chạy sau — chép ra mảng số
+        // thường trước khi gửi sang luồng khác.
+        const values = outputs.map((buffer) => Array.from(new Float32Array(buffer)));
+        scheduleOnRN(
+          handleFrameResult,
+          values,
+          frame.width,
+          frame.height,
+          preparedAt - startedAt,
+          inferredAt - preparedAt,
+        );
+      } catch (e) {
+        scheduleOnRN(handleFrameError, String(e));
       } finally {
         frame.dispose();
       }
     },
-    [reportFrame],
+    [model, isFrameScanEnabled, lastFrameRunAt, handleFrameResult, handleFrameError],
   );
 
+  /**
+   * pixelFormat 'rgb' + xoay vật lý: CameraX tự đổi YUV sang RGBA và xoay về
+   * chiều dọc, nên worklet không phải giải mã YUV (đường đã hỏng ở lần thử
+   * đầu) và kích thước khung đã là kích thước ảnh dọc parseDetections cần.
+   *
+   * useFrameOutput phải được gọi VÔ ĐIỀU KIỆN — nó là hook. Có gắn vào session
+   * hay không do giá trị trả về quyết định.
+   */
   const frameOutput = useFrameOutput({
     targetResolution: OBSTACLE_FRAME_RESOLUTION,
     pixelFormat: 'rgb',
-    enablePreviewSizedOutputBuffers: true,
-    onFrame: onProbeFrame,
+    enablePhysicalBufferRotation: true,
+    dropFramesWhileBusy: true,
+    onFrame,
   });
 
-  const tfModel = useLocalTfliteModel();
-  const modelRef = useRef(tfModel.model);
-  modelRef.current = tfModel.model;
+  /**
+   * Watchdog: đang ở chế độ luồng camera, model đã sẵn sàng mà quá
+   * OBSTACLE_FRAME_WATCHDOG_MS không có kết quả nào (chưa từng có, hoặc đang có
+   * rồi ngừng) thì lùi về chụp ảnh tĩnh. Im lặng kéo dài ở chế độ này bị hiểu
+   * thành "đường trống".
+   */
+  useEffect(() => {
+    if (!active || scanMode !== 'frame' || tfModel.model == null) {
+      return undefined;
+    }
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const lastResultAt = Math.max(startedAt, lastFrameResultAtRef.current);
+      if (Date.now() - lastResultAt >= OBSTACLE_FRAME_WATCHDOG_MS) {
+        fallbackToPhoto('watchdog');
+      }
+    }, 500);
+    return () => clearInterval(timer);
+  }, [active, scanMode, tfModel.model, fallbackToPhoto]);
 
   // TODO(debug): gỡ sau khi xác nhận model mới nạp đúng trên thiết bị.
   useEffect(() => {
@@ -307,6 +483,7 @@ export function useObstacleScanner(
         timerRef.current = null;
       }
       isCyclingRef.current = false;
+      isFrameScanEnabled.setBlocking(false);
       // Camera đóng theo màn hình; output này đã chết. Không buông ra thì lần
       // vào lại sẽ chụp lên nó trước khi camera kịp cấp output mới.
       photoOutputRef.current = null;
@@ -319,6 +496,9 @@ export function useObstacleScanner(
     lastSeverityRef.current = 'safe';
     isCyclingRef.current = true;
     failureCountRef.current = 0;
+    frameErrorCountRef.current = 0;
+    lastFrameRunAt.setBlocking(0);
+    isFrameScanEnabled.setBlocking(scanModeRef.current === 'frame');
 
     /**
      * Một khung không dò được. Im lặng bỏ qua vài lần đầu (model có thể còn
@@ -341,7 +521,10 @@ export function useObstacleScanner(
 
       const output = photoOutputRef.current;
       const model = modelRef.current;
-      if (output === null || model == null) {
+      // Đang quét bằng luồng camera thì vòng này chỉ chờ, sẵn sàng tiếp quản
+      // khi fallbackToPhoto() đổi chế độ. Lượt đầu sau khi đổi mất ~500 ms ở
+      // capturePhoto, đủ để lần suy luận cuối của worklet chạy xong trước.
+      if (output === null || model == null || scanModeRef.current === 'frame') {
         scheduleNext();
         return;
       }
@@ -377,55 +560,15 @@ export function useObstacleScanner(
         const inferredAt = Date.now();
         const detectMs = inferredAt - cycleStart;
 
-        const objects = parseDetections(outputs, frameSize.width, frameSize.height);
-        failureCountRef.current = 0;
-
-        const result = assessDetections(
-          objects,
-          frameSize,
-          sensitivityRef.current,
-          lastSeverityRef.current,
-        );
-        // lastSeverityRef giữ mức THÔ cho hysteresis diện tích; màn hình và giọng
-        // nói chỉ thấy mức đã làm mượt — xem severitySmoother.ts.
-        lastSeverityRef.current = result.severity;
-        const smoothed = smootherRef.current?.update(result, Date.now()) ?? result;
-        setAssessment(smoothed);
-
-        // Tách từng chặng: 557 ms/khung đo được không cho biết nghẽn ở chụp,
-        // decode, tiền xử lý hay suy luận — mà bốn chỗ đó cần bốn cách sửa
-        // hoàn toàn khác nhau. areaRatio + severity đi kèm để lần sau đo được
-        // mức có còn nhảy qua lại hay không, thay vì phải suy từ topScore.
-        logMetric({
-          event: 'obstacle_frame',
+        processDetections(outputs, frameSize, {
+          source: 'photo',
           frameId,
           detectMs,
           captureMs: capturedAt - cycleStart,
           decodeMs: decodedAt - capturedAt,
           prepMs: preparedAt - decodedAt,
           inferMs: inferredAt - preparedAt,
-          detections: objects.length,
-          topScore: Number(readTopScore(outputs).toFixed(3)),
-          areaRatio: Number(result.areaRatio.toFixed(3)),
-          severity: result.severity,
-          smoothed: smoothed.severity,
-          frame: `${frameSize.width}x${frameSize.height}`,
-          boxes: objects.map((object) => describeBox(object, frameSize)),
         });
-
-        const shouldAnnounce =
-          policyRef.current?.shouldAnnounce(smoothed, Date.now()) ?? false;
-        if (shouldAnnounce) {
-          if (smoothed.severity !== 'safe') {
-            logMetric({
-              event: 'obstacle_alert',
-              frameId,
-              severity: smoothed.severity,
-              label: smoothed.label,
-            });
-          }
-          void announceAssessment(smoothed);
-        }
       } catch (err) {
         // Rời chế độ trong lúc capturePhoto còn đang bay: camera đóng trước
         // khi promise resolve ("Camera is closed"). Đây là teardown bình
@@ -467,11 +610,11 @@ export function useObstacleScanner(
         timerRef.current = null;
       }
     };
-  }, [active]);
+  }, [active, isFrameScanEnabled, lastFrameRunAt, processDetections]);
 
   return {
     assessment,
     setPhotoOutput,
-    frameOutput: OBSTACLE_FRAME_PROBE_ENABLED ? frameOutput : null,
+    frameOutput: scanMode === 'frame' ? frameOutput : null,
   };
 }
