@@ -46,6 +46,8 @@ export type MetricEvent =
       /** Diện tích bbox thắng cuộc / diện tích khung — nguồn ra severity. */
       areaRatio: number;
       severity: 'safe' | 'warning' | 'danger';
+      /** Mức sau severitySmoother — thứ màn hình và giọng nói thật sự dùng. */
+      smoothed: 'safe' | 'warning' | 'danger';
       /** Kích thước khung đã xoay, dạng "rộngxcao" — kiểm chứng hướng ảnh. */
       frame: string;
       /** Mỗi box đã qua ngưỡng điểm: "nhãn điểm x trái-phải y trên-dưới" (tỉ lệ khung). */

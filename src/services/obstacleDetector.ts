@@ -230,11 +230,11 @@ export function assessDetections(
  * - An identical (severity, label) repeat within its cooldown is suppressed;
  *   after the cooldown it re-announces (a persisting obstacle is re-warned).
  *
- * - XÁC NHẬN THEO KHUNG: phải có OBSTACLE_CONFIRM_FRAMES khung liên tiếp cùng
- *   thấy vật cản (hoặc cùng thấy đường trống) thì mới được nói. Một khung nhiễu
- *   lẻ không còn đủ để hét "Dừng lại!". Chuỗi đếm theo CÓ/KHÔNG có vật cản chứ
- *   không theo từng mức, nên warning/danger xen kẽ vẫn tích luỹ được — đếm theo
- *   mức sẽ kẹt im lặng vĩnh viễn khi severity dao động.
+ * - XÁC NHẬN THEO KHUNG: vật cản được xác nhận ở severitySmoother trước khi tới
+ *   đây (assessment đưa vào là bản đã làm mượt). Riêng đường trống vẫn cần
+ *   OBSTACLE_CONFIRM_FRAMES khung safe liên tiếp: lúc mới vào chế độ, khung
+ *   hazard đầu tiên còn chưa xác nhận nên bộ làm mượt trả safe — thiếu bước này
+ *   app sẽ nói "Đường trống." ngay trước câu "Dừng lại!".
  *
  * State only updates when an announcement is allowed, so a suppressed
  * transition is retried on later frames until its cooldown expires.
@@ -247,7 +247,6 @@ export function createAnnouncementPolicy(): AnnouncementPolicy {
   let lastSeverity: Severity | null = null;
   let lastDangerAt = Number.NEGATIVE_INFINITY;
   let lastWarningAt = Number.NEGATIVE_INFINITY;
-  let hazardStreak = 0;
   let safeStreak = 0;
   let lastAnnounceAt = Number.NEGATIVE_INFINITY;
 
@@ -257,7 +256,6 @@ export function createAnnouncementPolicy(): AnnouncementPolicy {
 
       if (severity === 'safe') {
         safeStreak++;
-        hazardStreak = 0;
         if (safeStreak < OBSTACLE_CONFIRM_FRAMES) {
           return false;
         }
@@ -272,11 +270,7 @@ export function createAnnouncementPolicy(): AnnouncementPolicy {
         return true;
       }
 
-      hazardStreak++;
       safeStreak = 0;
-      if (hazardStreak < OBSTACLE_CONFIRM_FRAMES) {
-        return false;
-      }
 
       if (severity === 'danger') {
         // Chỉ còn cooldown của chính mức danger quyết định.

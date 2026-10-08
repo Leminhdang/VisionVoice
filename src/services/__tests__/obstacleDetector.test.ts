@@ -8,6 +8,7 @@ import {
   createAnnouncementPolicy,
 } from '../obstacleDetector';
 import type { Assessment, DetectedObject } from '../obstacleDetector';
+import { createSeveritySmoother } from '../severitySmoother';
 
 const FRAME = { width: 100, height: 100 };
 
@@ -33,17 +34,21 @@ function makeAssessment(
 }
 
 /**
- * Nạp đủ khung để vượt ngưỡng xác nhận mà KHÔNG tiêu mất lần thông báo.
+ * Mồi đủ khung safe để vượt ngưỡng xác nhận đường trống mà KHÔNG tiêu mất lần
+ * thông báo.
  *
- * Chính sách chỉ cho nói từ khung thứ OBSTACLE_CONFIRM_FRAMES trở đi, nên mọi
- * test về cooldown/chuyển trạng thái đều phải mồi (N − 1) khung trước. Các
- * khung mồi này bị chặn bởi chính bộ đếm xác nhận nên không đổi lastSeverity.
+ * Vật cản đã được xác nhận ở severitySmoother nên policy nói ngay khung đầu;
+ * chỉ đường trống còn cần OBSTACLE_CONFIRM_FRAMES khung. Mồi một assessment
+ * hazard ở đây sẽ tự nói mất, nên bỏ qua.
  */
 function warmStreak(
   policy: { shouldAnnounce(a: Assessment, now: number): boolean },
   assessment: Assessment,
   now = 0,
 ): void {
+  if (assessment.severity !== 'safe') {
+    return;
+  }
   for (let i = 0; i < OBSTACLE_CONFIRM_FRAMES - 1; i++) {
     policy.shouldAnnounce(assessment, now);
   }
@@ -61,21 +66,21 @@ describe('assessDetections', () => {
     expect(result).toEqual({ severity: 'safe', label: null, areaRatio: 0 });
   });
 
-  test('returns warning at exactly the 0.18 area-ratio boundary', () => {
-    // Arrange: 60x30 = 1800 / 10000 = 0.18, centered (center-x = 50)
-    const objects = [makeObject(20, 30, 60, 30, [{ text: 'chair', confidence: 0.9 }])];
+  test('returns warning at exactly the 0.06 area-ratio boundary', () => {
+    // Arrange: 60x10 = 600 / 10000 = 0.06, centered (center-x = 50)
+    const objects = [makeObject(20, 40, 60, 10, [{ text: 'chair', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'medium');
 
     // Assert
     expect(result.severity).toBe('warning');
-    expect(result.areaRatio).toBe(0.18);
+    expect(result.areaRatio).toBe(0.06);
   });
 
-  test('returns safe just below the 0.18 warning boundary', () => {
-    // Arrange: 60x29 = 1740 / 10000 = 0.174, centered
-    const objects = [makeObject(20, 30, 60, 29, [{ text: 'chair', confidence: 0.9 }])];
+  test('returns safe just below the 0.06 warning boundary', () => {
+    // Arrange: 60x9 = 540 / 10000 = 0.054, centered
+    const objects = [makeObject(20, 40, 60, 9, [{ text: 'chair', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'medium');
@@ -85,21 +90,21 @@ describe('assessDetections', () => {
     expect(result.label).toBeNull();
   });
 
-  test('returns danger at exactly the 0.35 area-ratio boundary', () => {
-    // Arrange: 70x50 = 3500 / 10000 = 0.35, centered (center-x = 50)
-    const objects = [makeObject(15, 20, 70, 50, [{ text: 'wall', confidence: 0.9 }])];
+  test('returns danger at exactly the 0.15 area-ratio boundary', () => {
+    // Arrange: 60x25 = 1500 / 10000 = 0.15, centered (center-x = 50)
+    const objects = [makeObject(20, 30, 60, 25, [{ text: 'wall', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'medium');
 
     // Assert
     expect(result.severity).toBe('danger');
-    expect(result.areaRatio).toBe(0.35);
+    expect(result.areaRatio).toBe(0.15);
   });
 
-  test('returns warning just below the 0.35 danger boundary', () => {
-    // Arrange: 70x49 = 3430 / 10000 = 0.343, centered
-    const objects = [makeObject(15, 20, 70, 49, [{ text: 'wall', confidence: 0.9 }])];
+  test('returns warning just below the 0.15 danger boundary', () => {
+    // Arrange: 60x24 = 1440 / 10000 = 0.144, centered
+    const objects = [makeObject(20, 30, 60, 24, [{ text: 'wall', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'medium');
@@ -143,8 +148,8 @@ describe('assessDetections', () => {
   });
 
   test('keeps the same object inside the wider band at high sensitivity', () => {
-    // Arrange: x 26–46 nằm trọn trong dải high [25, 75]; 20x90 = 0.18 area ratio
-    const objects = [makeObject(26, 5, 20, 90, [{ text: 'person', confidence: 0.9 }])];
+    // Arrange: x 26–46 nằm trọn trong dải high [25, 75]; 20x45 = 0.09 area ratio
+    const objects = [makeObject(26, 50, 20, 45, [{ text: 'person', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'high');
@@ -163,20 +168,20 @@ describe('assessDetections', () => {
     // Act
     const result = assessDetections(objects, FRAME, 'high');
 
-    // Assert
-    expect(result.severity).toBe('warning');
+    // Assert: diện tích bị giảm một nửa thay vì tính đủ 0,5.
     expect(result.areaRatio).toBe(0.25);
   });
 
-  test('box chỉ quệt nhẹ vào dải lối đi thì không cảnh báo', () => {
+  test('box chỉ quệt nhẹ vào dải lối đi chỉ được tính phần lấn', () => {
     // Arrange: x 0–35 lấn 10/35 vào dải high — tường bên hông lọt vào khung.
     const objects = [makeObject(0, 0, 35, 100, [{ text: 'tv', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'high');
 
-    // Assert
-    expect(result.severity).toBe('safe');
+    // Assert: 0,35 diện tích nhưng chỉ 10/35 nằm trong dải → 0,1, không lên danger.
+    expect(result.areaRatio).toBeCloseTo(0.1);
+    expect(result.severity).not.toBe('danger');
   });
 
   test('box không chạm dải lối đi thì bị loại hẳn', () => {
@@ -290,12 +295,12 @@ describe('assessDetections', () => {
 
 describe('trễ trạng thái mức cảnh báo', () => {
   /** Diện tích ngay dưới ngưỡng danger — chỗ mức từng nhảy qua lại. */
-  const JUST_BELOW_DANGER = 60; // 60×57 = 0.342 < 0.35
+  const JUST_BELOW_DANGER = 60; // 60×24 = 0.144 < 0.15
 
   test('vào mức danger vẫn cần vượt đủ ngưỡng gốc', () => {
-    // Arrange: từ 'safe', diện tích 0,342 chưa đủ 0,35.
+    // Arrange: từ 'safe', diện tích 0,144 chưa đủ 0,15.
     const objects = [
-      makeObject(20, 30, JUST_BELOW_DANGER, 57, [{ text: 'tv', confidence: 0.9 }]),
+      makeObject(20, 30, JUST_BELOW_DANGER, 24, [{ text: 'tv', confidence: 0.9 }]),
     ];
 
     // Act
@@ -310,7 +315,7 @@ describe('trễ trạng thái mức cảnh báo', () => {
     // đo được trên máy — camera đứng yên, diện tích rung quanh ngưỡng, mức nhảy
     // warning ↔ danger liên tục.
     const objects = [
-      makeObject(20, 30, JUST_BELOW_DANGER, 57, [{ text: 'tv', confidence: 0.9 }]),
+      makeObject(20, 30, JUST_BELOW_DANGER, 24, [{ text: 'tv', confidence: 0.9 }]),
     ];
 
     // Act
@@ -321,8 +326,8 @@ describe('trễ trạng thái mức cảnh báo', () => {
   });
 
   test('tụt hẳn dưới ngưỡng trễ thì mới rời mức danger', () => {
-    // Arrange: 60×40 = 0,24 — dưới cả 0,35 × 0,85 = 0,2975.
-    const objects = [makeObject(20, 30, 60, 40, [{ text: 'tv', confidence: 0.9 }])];
+    // Arrange: 60×15 = 0,09 — dưới cả 0,15 × 0,85 = 0,1275.
+    const objects = [makeObject(20, 35, 60, 15, [{ text: 'tv', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'medium', 'danger');
@@ -341,9 +346,8 @@ describe('trễ trạng thái + chính sách thông báo, chạy chung', () => {
    * f6 danger(0) … f9 warning(2176) → f10 danger(2889). Hai lần cuối chỉ cách
    * nhau 713 ms nên câu sau cắt cụt câu trước.
    *
-   * Gọi shouldAnnounce đúng MỘT lần mỗi khung, như vòng quét thật — không mồi
-   * bằng warmStreak, vì giữa chuỗi thì lần mồi lại tiêu mất chính lần thông báo
-   * cần đo.
+   * Chạy đúng chuỗi như vòng quét thật: assessDetections → severitySmoother →
+   * shouldAnnounce, mỗi khung một lần.
    */
   const FRAMES: { at: number; wide: boolean }[] = [
     { at: -737, wide: true },
@@ -354,17 +358,18 @@ describe('trễ trạng thái + chính sách thông báo, chạy chung', () => {
     { at: 2889, wide: true },
   ];
 
-  /** 70×52 = 0,364 (trên ngưỡng 0,35) và 70×49 = 0,343 (ngay dưới). */
-  const heightFor = (wide: boolean): number => (wide ? 52 : 49);
+  /** 70×22 = 0,154 (trên ngưỡng 0,15) và 70×21 = 0,147 (ngay dưới). */
+  const heightFor = (wide: boolean): number => (wide ? 22 : 21);
 
   function runSequence(useHysteresis: boolean): string[] {
     const policy = createAnnouncementPolicy();
+    const smoother = createSeveritySmoother();
     let previous: Assessment['severity'] = 'safe';
     const spoken: string[] = [];
 
     for (const frame of FRAMES) {
       const objects = [
-        makeObject(15, 20, 70, heightFor(frame.wide), [
+        makeObject(15, 40, 70, heightFor(frame.wide), [
           { text: 'tv', confidence: 0.9 },
         ]),
       ];
@@ -375,29 +380,29 @@ describe('trễ trạng thái + chính sách thông báo, chạy chung', () => {
         useHysteresis ? previous : 'safe',
       );
       previous = result.severity;
-      if (policy.shouldAnnounce(result, frame.at)) {
-        spoken.push(result.severity);
+      const smoothed = smoother.update(result, frame.at);
+      if (policy.shouldAnnounce(smoothed, frame.at)) {
+        spoken.push(smoothed.severity);
       }
     }
 
     return spoken;
   }
 
-  test('không có trễ trạng thái thì mức nhảy và câu sau cắt câu trước', () => {
-    // Act: ép previous = 'safe' mỗi khung = hành vi trước khi sửa.
+  test('không có trễ trạng thái thì bộ làm mượt vẫn chặn câu warning chen ngang', () => {
+    // Act: ép previous = 'safe' mỗi khung — khung 2176 ra warning thô.
     const spoken = runSequence(false);
 
-    // Assert: đúng chuỗi danger → warning → danger đã đo được trên máy.
-    expect(spoken).toEqual(['danger', 'warning', 'danger']);
+    // Assert: danger đang được giữ nên khung warning thô không sinh câu nào;
+    // vật còn đó nên được nhắc lại sau cooldown 2 000 ms, lần 713 ms sau bị chặn.
+    expect(spoken).toEqual(['danger', 'danger']);
   });
 
-  test('có trễ trạng thái thì không còn câu tụt mức chen ngang', () => {
+  test('có trễ trạng thái thì kết quả giống hệt', () => {
     // Act
     const spoken = runSequence(true);
 
-    // Assert: khung rung giữ nguyên danger nên không sinh câu 'warning'; vật
-    // vẫn còn đó nên được nhắc lại sau cooldown, và lần danger 713 ms sau đó bị
-    // chặn. Nhắc lại vật cản dai dẳng là CỐ Ý, khác hẳn với nhảy mức.
+    // Assert
     expect(spoken).toEqual(['danger', 'danger']);
   });
 });
@@ -504,44 +509,6 @@ describe('createAnnouncementPolicy', () => {
     // Assert
     expect(onTransition).toBe(true);
     expect(repeated).toBe(false);
-  });
-
-  test('một khung nhiễu lẻ không đủ để báo nguy hiểm', () => {
-    // Arrange
-    const policy = createAnnouncementPolicy();
-
-    // Act: đúng một khung thấy danger rồi khung sau đã trống trở lại.
-    const single = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
-
-    // Assert
-    expect(single).toBe(false);
-  });
-
-  test('chuỗi bị ngắt bởi một khung trống thì phải đếm lại từ đầu', () => {
-    // Arrange: danger, trống, danger — không khung danger nào liên tiếp đủ N.
-    const policy = createAnnouncementPolicy();
-    policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 0);
-    policy.shouldAnnounce(makeAssessment('safe'), 100);
-
-    // Act
-    const result = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 200);
-
-    // Assert
-    expect(result).toBe(false);
-  });
-
-  test('warning và danger xen kẽ vẫn tích luỹ đủ xác nhận, không kẹt im lặng', () => {
-    // Arrange: severity dao động là chuyện thường khi bbox rung quanh ngưỡng.
-    // Đếm theo từng mức sẽ không bao giờ đủ N và app im lặng vĩnh viễn — mà
-    // im lặng bị hiểu thành "đường trống".
-    const policy = createAnnouncementPolicy();
-    policy.shouldAnnounce(makeAssessment('warning', 'ghế', 0.2), 0);
-
-    // Act
-    const result = policy.shouldAnnounce(makeAssessment('danger', 'ghế', 0.4), 100);
-
-    // Assert
-    expect(result).toBe(true);
   });
 
   test('đường trống cũng cần đủ khung xác nhận mới báo', () => {

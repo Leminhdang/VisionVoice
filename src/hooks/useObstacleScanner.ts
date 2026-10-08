@@ -34,6 +34,8 @@ import type {
   Severity,
 } from '../services/obstacleDetector';
 import { loadObstacleModel } from '../services/obstacleModel';
+import { createSeveritySmoother } from '../services/severitySmoother';
+import type { SeveritySmoother } from '../services/severitySmoother';
 import { parseDetections, readTopScore } from '../services/tfliteDetector';
 import { useSettings } from '../state/SettingsContext';
 
@@ -189,6 +191,7 @@ export function useObstacleScanner(
 
   const photoOutputRef = useRef<CameraPhotoOutput | null>(null);
   const policyRef = useRef<AnnouncementPolicy | null>(null);
+  const smootherRef = useRef<SeveritySmoother | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCyclingRef = useRef(false);
   const failureCountRef = useRef(0);
@@ -311,6 +314,7 @@ export function useObstacleScanner(
     }
 
     policyRef.current = createAnnouncementPolicy();
+    smootherRef.current = createSeveritySmoother();
     setAssessment(null);
     lastSeverityRef.current = 'safe';
     isCyclingRef.current = true;
@@ -382,8 +386,11 @@ export function useObstacleScanner(
           sensitivityRef.current,
           lastSeverityRef.current,
         );
+        // lastSeverityRef giữ mức THÔ cho hysteresis diện tích; màn hình và giọng
+        // nói chỉ thấy mức đã làm mượt — xem severitySmoother.ts.
         lastSeverityRef.current = result.severity;
-        setAssessment(result);
+        const smoothed = smootherRef.current?.update(result, Date.now()) ?? result;
+        setAssessment(smoothed);
 
         // Tách từng chặng: 557 ms/khung đo được không cho biết nghẽn ở chụp,
         // decode, tiền xử lý hay suy luận — mà bốn chỗ đó cần bốn cách sửa
@@ -401,22 +408,23 @@ export function useObstacleScanner(
           topScore: Number(readTopScore(outputs).toFixed(3)),
           areaRatio: Number(result.areaRatio.toFixed(3)),
           severity: result.severity,
+          smoothed: smoothed.severity,
           frame: `${frameSize.width}x${frameSize.height}`,
           boxes: objects.map((object) => describeBox(object, frameSize)),
         });
 
         const shouldAnnounce =
-          policyRef.current?.shouldAnnounce(result, Date.now()) ?? false;
+          policyRef.current?.shouldAnnounce(smoothed, Date.now()) ?? false;
         if (shouldAnnounce) {
-          if (result.severity !== 'safe') {
+          if (smoothed.severity !== 'safe') {
             logMetric({
               event: 'obstacle_alert',
               frameId,
-              severity: result.severity,
-              label: result.label,
+              severity: smoothed.severity,
+              label: smoothed.label,
             });
           }
-          void announceAssessment(result);
+          void announceAssessment(smoothed);
         }
       } catch (err) {
         // Rời chế độ trong lúc capturePhoto còn đang bay: camera đóng trước

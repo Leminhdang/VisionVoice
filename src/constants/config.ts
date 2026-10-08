@@ -180,7 +180,33 @@ export const OBSTACLE_MIN_BOTTOM_RATIO = 0.45;
  * trống, đúng thứ nguy hiểm nhất.
  */
 export const OBSTACLE_CONFIRM_FRAMES = 2;
-export const DANGER_AREA_RATIO = 0.35;
+/**
+ * Mức cảnh báo đã xác nhận được giữ thêm bấy nhiêu mili giây sau khung cuối
+ * cùng còn thấy nó, rồi mới được tụt xuống.
+ *
+ * Model dao động từng khung: cùng một cái ghế, khung này score 0,4, khung sau
+ * 0,3 là mất hẳn. Ở ~1 khung/giây, mỗi lần mất là màn hình nhảy nguy hiểm →
+ * an toàn → nguy hiểm và app nói chồng câu. Lên mức vẫn tức thời (sau
+ * OBSTACLE_CONFIRM_FRAMES khung); chỉ xuống mức là chậm — chậm theo hướng an
+ * toàn. Xem severitySmoother.ts.
+ *
+ * Phải dài hơn HAI chu kỳ quét thật (~1 000 ms): mất một khung thì khung thấy
+ * lại cách khung trước đúng 2 chu kỳ, giữ 2 000 ms là hết hạn đúng lúc vật
+ * quay lại. 2 500 ms chịu được một khung mất cộng độ lệch nhịp.
+ */
+export const OBSTACLE_SEVERITY_HOLD_MS = 2500;
+/**
+ * Ngưỡng areaRatio (đã nhân tỉ lệ phủ dải) cho mức nguy hiểm và cảnh báo.
+ *
+ * Bản trước (0,35 / 0,18) chỉ báo khi vật đã rất gần. Ước lượng theo camera
+ * chính S23 cầm dọc (phủ ~1,0d × 1,5d mét ở khoảng cách d): một cái ghế
+ * ~0,5 × 0,8 m chỉ được cảnh báo ở ~1,2 m và nguy hiểm ở ~0,9 m, trong khi
+ * xác nhận 2 khung cộng chu kỳ quét đã tốn ~2 giây. Ngưỡng hiện tại đưa ghế
+ * lên ~2,1 m / ~1,3 m, người đứng lên ~3,1 m / ~1,9 m.
+ *
+ * ĐANG THỬ — chưa hiệu chỉnh bằng log thật, và báo cáo/slide vẫn ghi 0,35 / 0,18.
+ */
+export const DANGER_AREA_RATIO = 0.15;
 /**
  * Hệ số trễ trạng thái (hysteresis): đã ở mức nào rồi thì phải tụt xuống dưới
  * ngưỡng × hệ số này mới được rời mức đó.
@@ -195,7 +221,7 @@ export const DANGER_AREA_RATIO = 0.35;
  * điều nhiệt tránh bật/tắt liên hồi quanh nhiệt độ đặt.
  */
 export const OBSTACLE_SEVERITY_HYSTERESIS = 0.85;
-export const WARNING_AREA_RATIO = 0.18;
+export const WARNING_AREA_RATIO = 0.06;
 export const CENTER_BAND_WIDTH_RATIO: Record<'low' | 'medium' | 'high', number> = {
   low: 0.25,
   medium: 0.4,
