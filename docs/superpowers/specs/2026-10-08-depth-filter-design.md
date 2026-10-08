@@ -6,6 +6,8 @@ Date: 2026-10-08 · Branch: `feature/obstacle` · Status: experimental (the thes
 
 Reduce false obstacle warnings a little by checking each EfficientDet detection against a monocular depth map. Depth may only **drop** a detection that looks far away. It never creates a warning, never raises a severity, never changes UI, and never adds speech or strings.
 
+Expected impact is small: it only removes warnings for objects that are far away, which matter more after lowering the AreaRatio thresholds to 0.06 / 0.15. It does not fix missed walls or doors, and it does not fix false alarms from nearby walls (those are near in the depth map too). A 50–60 % improvement is not expected from this scope.
+
 ## Non-goals
 
 - Detecting walls, doors or other non-COCO obstacles.
