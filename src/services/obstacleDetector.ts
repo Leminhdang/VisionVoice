@@ -94,16 +94,32 @@ function getBestLabelVi(object: DetectedObject): string | null {
   return OBSTACLE.LABEL_VI[key] ?? null;
 }
 
-function isInCenterBand(
+/**
+ * Phần của vật được tính là nằm trên lối đi, theo trục ngang, từ 0 tới 1.
+ *
+ * Bản trước chỉ xét TÂM box nằm trong dải giữa rồi tính TRỌN diện tích box.
+ * Ở hành lang, model trả box lớn bám mép tường: rộng nửa khung thì tâm đã chạm
+ * dải, và cả mảng tường bên hông bị tính là chắn ngay trước mặt.
+ *
+ * Giờ chỉ tính tỉ lệ bề ngang dải mà box thật sự chiếm. Box nằm gọn trong dải,
+ * hoặc phủ kín cả dải, vẫn được tính đủ — nên vật chắn ngay trước mặt không bị
+ * giảm nhẹ. Box chỉ lấn một góc vào dải bị giảm đúng theo phần lấn.
+ */
+function getPathCoverage(
   object: DetectedObject,
   frameWidth: number,
   sensitivity: ObstacleSensitivity,
-): boolean {
+): number {
   const bandWidth = CENTER_BAND_WIDTH_RATIO[sensitivity] * frameWidth;
   const bandStart = (frameWidth - bandWidth) / 2;
   const bandEnd = bandStart + bandWidth;
-  const centerX = object.frame.origin.x + object.frame.size.x / 2;
-  return centerX >= bandStart && centerX <= bandEnd;
+  const left = object.frame.origin.x;
+  const right = left + object.frame.size.x;
+  const overlap = Math.min(right, bandEnd) - Math.max(left, bandStart);
+  if (overlap <= 0) {
+    return 0;
+  }
+  return overlap / Math.min(object.frame.size.x, bandWidth);
 }
 
 /**
@@ -145,12 +161,12 @@ function toSeverity(areaRatio: number, previous: Severity): Severity {
 
 /**
  * Assess a frame of detections. Objects must (1) score >= OBSTACLE_SCORE_MIN,
- * (2) have their bbox center-x inside the central band whose width is
+ * (2) overlap the central band whose width is
  * CENTER_BAND_WIDTH_RATIO[sensitivity] * frame.width, and (3) have their bbox
  * BOTTOM edge at or below OBSTACLE_MIN_BOTTOM_RATIO of the frame height —
  * see isOnWalkingPath(). `previousSeverity` là mức của khung trước, dùng cho
- * trễ trạng thái trong toSeverity(). Severity comes from the
- * bbox-to-frame area ratio; the highest severity wins (ties broken by larger
+ * trễ trạng thái trong toSeverity(). Severity comes from the bbox-to-frame
+ * area ratio weighted by getPathCoverage(); the highest severity wins (ties broken by larger
  * area). `safe` assessments always carry a null label — the safe phrase never
  * names an object. Labels are mapped through OBSTACLE.LABEL_VI; unknown → null.
  */
@@ -171,14 +187,16 @@ export function assessDetections(
     if (getObjectScore(object) < OBSTACLE_SCORE_MIN) {
       continue;
     }
-    if (!isInCenterBand(object, frame.width, sensitivity)) {
+    const pathCoverage = getPathCoverage(object, frame.width, sensitivity);
+    if (pathCoverage === 0) {
       continue;
     }
     if (!isOnWalkingPath(object, frame.height)) {
       continue;
     }
 
-    const areaRatio = (object.frame.size.x * object.frame.size.y) / frameArea;
+    const areaRatio =
+      (object.frame.size.x * object.frame.size.y * pathCoverage) / frameArea;
     const severity = toSeverity(areaRatio, previousSeverity);
     const isMoreSevere = SEVERITY_RANK[severity] > SEVERITY_RANK[best.severity];
     const isLargerAtSameSeverity =

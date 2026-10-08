@@ -73,7 +73,7 @@ export default function ObstacleModeScreen({
         extraOutput={frameOutput}
       />
       <View pointerEvents="none" style={styles.scrim} />
-      <SeverityBanner severity={severity} objectLabel={assessment?.label} />
+      <SeverityBanner severity={severity} />
       <View style={[styles.stopZone, { bottom: spacing.xl + insets.bottom }]}>
         <BigActionButton
           label={OBSTACLE.STOP_BUTTON}

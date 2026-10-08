@@ -132,8 +132,8 @@ describe('assessDetections', () => {
   });
 
   test('ignores an object outside the central band at low sensitivity', () => {
-    // Arrange: center-x = 30, low band is [37.5, 62.5] on a 100-wide frame
-    const objects = [makeObject(20, 5, 20, 90, [{ text: 'person', confidence: 0.9 }])];
+    // Arrange: x 15–35, low band is [37.5, 62.5] on a 100-wide frame
+    const objects = [makeObject(15, 5, 20, 90, [{ text: 'person', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'low');
@@ -143,8 +143,8 @@ describe('assessDetections', () => {
   });
 
   test('keeps the same object inside the wider band at high sensitivity', () => {
-    // Arrange: center-x = 30, high band is [25, 75]; 20x90 = 0.18 area ratio
-    const objects = [makeObject(20, 5, 20, 90, [{ text: 'person', confidence: 0.9 }])];
+    // Arrange: x 26–46 nằm trọn trong dải high [25, 75]; 20x90 = 0.18 area ratio
+    const objects = [makeObject(26, 5, 20, 90, [{ text: 'person', confidence: 0.9 }])];
 
     // Act
     const result = assessDetections(objects, FRAME, 'high');
@@ -152,6 +152,54 @@ describe('assessDetections', () => {
     // Assert
     expect(result.severity).toBe('warning');
     expect(result.label).toBe('người');
+  });
+
+  test('mảng tường bám mép chỉ được tính phần lấn vào dải lối đi', () => {
+    // Arrange: tái hiện ca hành lang — box bám mép trái, rộng nửa khung, cao
+    // trọn khung. Tâm x = 25 nằm đúng mép dải high [25, 75] nên luật cũ tính
+    // cả 0,5 diện tích → "Dừng lại!". Thật ra chỉ 25/50 bề ngang dải bị chiếm.
+    const objects = [makeObject(0, 0, 50, 100, [{ text: 'refrigerator', confidence: 0.9 }])];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'high');
+
+    // Assert
+    expect(result.severity).toBe('warning');
+    expect(result.areaRatio).toBe(0.25);
+  });
+
+  test('box chỉ quệt nhẹ vào dải lối đi thì không cảnh báo', () => {
+    // Arrange: x 0–35 lấn 10/35 vào dải high — tường bên hông lọt vào khung.
+    const objects = [makeObject(0, 0, 35, 100, [{ text: 'tv', confidence: 0.9 }])];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'high');
+
+    // Assert
+    expect(result.severity).toBe('safe');
+  });
+
+  test('box không chạm dải lối đi thì bị loại hẳn', () => {
+    // Arrange: x 0–30, dải medium là [30, 70] — chạm đúng mép, không lấn vào.
+    const objects = [makeObject(0, 0, 30, 100, [{ text: 'tv', confidence: 0.9 }])];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'medium');
+
+    // Assert
+    expect(result).toEqual({ severity: 'safe', label: null, areaRatio: 0 });
+  });
+
+  test('vật rộng hơn dải và phủ kín dải vẫn tính đủ diện tích', () => {
+    // Arrange: vật chắn ngay trước mặt, rộng 90 > dải medium 40, phủ kín dải.
+    const objects = [makeObject(5, 50, 90, 50, [{ text: 'chair', confidence: 0.9 }])];
+
+    // Act
+    const result = assessDetections(objects, FRAME, 'medium');
+
+    // Assert
+    expect(result.severity).toBe('danger');
+    expect(result.areaRatio).toBe(0.45);
   });
 
   test('picks the highest severity among multiple objects and maps its label', () => {

@@ -8,9 +8,12 @@ import { typography } from '../theme/typography';
 
 export type BannerSeverity = 'safe' | 'warning' | 'danger';
 
+/**
+ * Không hiển thị tên vật: model hay đoán sai loại (tường thành 'tủ lạnh'), và
+ * tên sai trên màn hình làm người nhìn tin nhầm hơn là giúp được gì.
+ */
 export interface SeverityBannerProps {
   severity: BannerSeverity;
-  objectLabel?: string | null;
 }
 
 const FADE_DURATION_MS = 180;
@@ -22,7 +25,7 @@ const WORD_BY_SEVERITY: Record<BannerSeverity, string> = {
   danger: OBSTACLE.BANNER_DANGER,
 };
 
-export function SeverityBanner({ severity, objectLabel }: SeverityBannerProps) {
+export function SeverityBanner({ severity }: SeverityBannerProps) {
   const opacityAnim = useRef(new Animated.Value(1)).current;
   const previousSeverityRef = useRef(severity);
 
@@ -51,9 +54,6 @@ export function SeverityBanner({ severity, objectLabel }: SeverityBannerProps) {
       {severity === 'safe' && <View style={styles.safeFrame} />}
       <View style={styles.content}>
         <Text style={[styles.word, wordBySeverity[severity]]}>{WORD_BY_SEVERITY[severity]}</Text>
-        {severity !== 'safe' && objectLabel ? (
-          <Text style={[styles.objectLabel, labelBySeverity[severity]]}>{objectLabel}</Text>
-        ) : null}
       </View>
     </Animated.View>
   );
@@ -95,11 +95,6 @@ const styles = StyleSheet.create({
   primaryText: {
     color: colors.textPrimary,
   },
-  objectLabel: {
-    ...typography.title,
-    textAlign: 'center',
-    marginTop: spacing.md,
-  },
 });
 
 const fillBySeverity = {
@@ -110,12 +105,6 @@ const fillBySeverity = {
 
 const wordBySeverity = {
   safe: styles.safeWord,
-  warning: styles.inkText,
-  danger: styles.primaryText,
-} as const;
-
-const labelBySeverity = {
-  safe: styles.inkText,
   warning: styles.inkText,
   danger: styles.primaryText,
 } as const;

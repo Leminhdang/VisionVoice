@@ -29,6 +29,8 @@ import {
 import type {
   AnnouncementPolicy,
   Assessment,
+  DetectedObject,
+  FrameSize,
   Severity,
 } from '../services/obstacleDetector';
 import { loadObstacleModel } from '../services/obstacleModel';
@@ -126,6 +128,21 @@ function createFrameProbeReporter(): (
       })}`,
     );
   };
+}
+
+/**
+ * Một box thành chuỗi ngắn cho log, toạ độ theo tỉ lệ khung. Đủ để dựng lại
+ * vì sao một khung bị báo nguy hiểm: model thấy gì, điểm bao nhiêu, nằm đâu.
+ */
+function describeBox(object: DetectedObject, frame: FrameSize): string {
+  const { origin, size } = object.frame;
+  const label = object.labels[0];
+  const ratio = (value: number, total: number): string => (value / total).toFixed(2);
+  return (
+    `${label?.text ?? '?'} ${label?.confidence.toFixed(2) ?? '?'}` +
+    ` x${ratio(origin.x, frame.width)}-${ratio(origin.x + size.x, frame.width)}` +
+    ` y${ratio(origin.y, frame.height)}-${ratio(origin.y + size.y, frame.height)}`
+  );
 }
 
 /**
@@ -337,6 +354,11 @@ export function useObstacleScanner(
         // orientation nên frame đưa vào model mới thực sự thẳng đứng.
         const image = await photo.toImageAsync();
         const decodedAt = Date.now();
+        // Kích thước khung PHẢI lấy từ ảnh đã xoay, không lấy từ photo:
+        // photo.width/height là buffer CameraX CHƯA XOAY (ngang, 640×480) trong
+        // khi model nhìn ảnh dọc. Dùng nhầm thì box map ngược bị ép vào giữa
+        // trục ngang — tường sát mép lọt vào dải lối đi và bị báo "Dừng lại!".
+        const frameSize = { width: image.width, height: image.height };
 
         let inputBuffer: ArrayBuffer;
         try {
@@ -351,12 +373,12 @@ export function useObstacleScanner(
         const inferredAt = Date.now();
         const detectMs = inferredAt - cycleStart;
 
-        const objects = parseDetections(outputs, photo.width, photo.height);
+        const objects = parseDetections(outputs, frameSize.width, frameSize.height);
         failureCountRef.current = 0;
 
         const result = assessDetections(
           objects,
-          { width: photo.width, height: photo.height },
+          frameSize,
           sensitivityRef.current,
           lastSeverityRef.current,
         );
@@ -379,6 +401,8 @@ export function useObstacleScanner(
           topScore: Number(readTopScore(outputs).toFixed(3)),
           areaRatio: Number(result.areaRatio.toFixed(3)),
           severity: result.severity,
+          frame: `${frameSize.width}x${frameSize.height}`,
+          boxes: objects.map((object) => describeBox(object, frameSize)),
         });
 
         const shouldAnnounce =
